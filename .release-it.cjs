@@ -8,6 +8,7 @@ All notable changes to \`doordash-cli\` will be documented in this file.
 - Versions follow [Semantic Versioning](https://semver.org/).
 - Release entries are generated from squash-merged conventional commits on \`main\`.
 - Git tags use the \`vX.Y.Z\` form.
+- Historical \`doordash-cli-vX.Y.Z\` tags are bridged locally during release automation.
 
 See [docs/releasing.md](docs/releasing.md) for the maintainer release flow.`;
 
@@ -101,6 +102,7 @@ module.exports = {
     assets: ['artifacts/releases/*.tgz', 'artifacts/releases/*.sha256'],
   },
   hooks: {
+    'before:init': 'node scripts/release/ensure-legacy-tag-alias.mjs',
     'after:bump': [
       'npm run validate',
       'npm run smoke:pack',

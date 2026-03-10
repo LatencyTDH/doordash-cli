@@ -24,6 +24,20 @@ The previous Release Please setup still required two human steps:
 
 That was fine for a PR-centric cadence, but it is unnecessary friction for a repo that wants a **manual-but-direct** release button. The Release Please flow has been removed and superseded by a `release-it` workflow that keeps the release cadence manual while making the actual release itself one action.
 
+## Legacy tag migration guard
+
+The historical `0.1.0` release used the old tag name `doordash-cli-v0.1.0`.
+
+`release-it` discovers the previous release boundary from tags that match the current `vX.Y.Z` scheme, so a straight migration would otherwise miss that legacy tag and regenerate the entire pre-`0.1.0` history on the first run.
+
+To keep the one-step workflow intact, release automation now runs `scripts/release/ensure-legacy-tag-alias.mjs` during `release-it` initialization. The script:
+
+- finds legacy `doordash-cli-v*` tags
+- creates matching local `v*` aliases when they are missing
+- refuses to continue if a legacy tag and canonical `v*` tag disagree about which commit a version points to
+
+The aliases are local migration shims for release tooling. They let `release-it` compute the right version/changelog boundary without reintroducing a release PR or relying on manual maintainer cleanup.
+
 ## Versioning policy
 
 The project uses Semantic Versioning driven by conventional commits on `main`:
