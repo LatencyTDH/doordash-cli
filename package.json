@@ -19,6 +19,7 @@
     "docs/examples.md",
     "scripts/install-manpage.sh",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {

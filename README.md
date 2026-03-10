@@ -56,7 +56,7 @@ doordash-cli --version
 doordash-cli --help
 ```
 
-The first public publish still requires maintainer npm auth, but the repo and tarball layout are now set up for that path.
+The first public publish still requires maintainer npm auth, but tagged GitHub Releases are now the canonical release channel until issue #12 unlocks npm publication.
 
 ### Browser prerequisite
 
@@ -102,6 +102,7 @@ All commands print JSON.
 
 - [Install guide](docs/install.md)
 - [Examples](docs/examples.md)
+- [Release process](docs/releasing.md)
 - `man dd-cli`
 - `man doordash-cli`
 
