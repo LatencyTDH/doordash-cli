@@ -1,11 +1,16 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SAFE_COMMANDS, assertSafeCommand, runCommand, shutdown } from "./lib.js";
+
+const UNICODE_DASH_PREFIX = /^[\u2012\u2013\u2014\u2015\u2212]+/u;
+const FLAG_BODY = /^[A-Za-z0-9][A-Za-z0-9-]*(=.*)?$/;
 
 export function usage(): string {
   return [
-    "doordash-cli <command> [flags]",
+    "Usage:",
+    "  dd-cli <command> [flags]",
+    "  doordash-cli <command> [flags]",
     "",
     "Safe commands:",
     "  auth-check",
@@ -20,6 +25,10 @@ export function usage(): string {
     "  cart",
     "",
     "Notes:",
+    "  - Run with no arguments to show this help.",
+    "  - -h / --help are supported.",
+    "  - Common Unicode long dashes are normalized for flags, so —help / –help work too.",
+    "  - Preferred command spelling is lowercase; Dd-cli is provided as a compatibility alias after npm link.",
     "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, cart, add-to-cart, and update-cart.",
     "  - auth-check automatically imports a signed-in OpenClaw managed-browser DoorDash session when one is available.",
     "  - set-address now uses DoorDash autocomplete/get-or-create plus addConsumerAddressV2 for brand-new address enrollment when needed.",
@@ -30,8 +39,32 @@ export function usage(): string {
     "Dangerous commands are intentionally unsupported:",
     "  checkout, place-order, track-order, payment actions",
     "",
-    `Allowed commands: ${SAFE_COMMANDS.join(", ")}`,
+    "Examples:",
+    "  dd-cli --help",
+    "  dd-cli",
+    "  dd-cli search --query sushi",
+    "  doordash-cli auth-check",
+    "",
+    "Allowed commands: auth-check, auth-bootstrap, auth-clear, set-address, search, menu, item, add-to-cart, update-cart, cart",
   ].join("\n");
+}
+
+export function normalizeOptionToken(token: string): string {
+  const prefix = token.match(UNICODE_DASH_PREFIX)?.[0];
+  if (!prefix) {
+    return token;
+  }
+
+  const body = token.slice(prefix.length);
+  if (!FLAG_BODY.test(body)) {
+    return token;
+  }
+
+  return `${body.length === 1 ? "-" : "--"}${body}`;
+}
+
+function looksLikeFlagToken(token: string): boolean {
+  return token.startsWith("-") || normalizeOptionToken(token) !== token;
 }
 
 export function parseArgv(argv: string[]): { command?: string; flags: Record<string, string> } {
@@ -39,15 +72,17 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
   const flags: Record<string, string> = {};
 
   let command: string | undefined;
-  if (tokens[0] !== undefined && !tokens[0].startsWith("-")) {
+  if (tokens[0] !== undefined && !looksLikeFlagToken(tokens[0])) {
     command = tokens.shift();
   }
 
   for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i];
-    if (token === undefined) {
+    const rawToken = tokens[i];
+    if (rawToken === undefined) {
       throw new Error("Unexpected empty argument");
     }
+
+    const token = normalizeOptionToken(rawToken);
 
     if (token === "-h" || token === "--help") {
       flags.help = "true";
@@ -55,7 +90,7 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
     }
 
     if (!token.startsWith("--")) {
-      throw new Error(`Unexpected positional argument: ${token}`);
+      throw new Error(`Unexpected positional argument: ${rawToken}`);
     }
 
     const inlineEquals = token.indexOf("=");
@@ -74,7 +109,7 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
     }
 
     const next = tokens[i + 1];
-    if (next === undefined || next.startsWith("--")) {
+    if (next === undefined || looksLikeFlagToken(next)) {
       flags[key] = "true";
       continue;
     }
@@ -86,39 +121,59 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
   return { command, flags };
 }
 
-async function main(): Promise<void> {
-  const { command, flags } = parseArgv(process.argv.slice(2));
+export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const { command, flags } = parseArgv(argv);
 
   if (!command || command === "help" || flags.help === "true") {
     console.log(usage());
     return;
   }
 
-  assertSafeCommand(command);
+  const lib: typeof import("./lib.js") = await import("./lib.js");
+  lib.assertSafeCommand(command);
+  const safeCommand: import("./lib.js").SafeCommand = command;
 
   try {
-    const result = await runCommand(command, flags);
+    const result = await lib.runCommand(safeCommand, flags);
     console.log(JSON.stringify(result, null, 2));
     process.exitCode = 0;
   } finally {
-    await shutdown();
+    await lib.shutdown();
   }
 }
 
-function isDirectExecution(): boolean {
-  const invokedPath = process.argv[1];
-  if (!invokedPath) {
+export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
+  try {
+    await main(argv);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    console.error(`\n${usage()}`);
+
+    try {
+      const { shutdown } = await import("./lib.js");
+      await shutdown().catch(() => {});
+    } catch {
+      // Help/no-arg flows should work even if runtime deps are unavailable.
+    }
+
+    process.exitCode = 1;
+  }
+}
+
+export function isDirectExecution(argv1: string | undefined = process.argv[1], metaUrl: string = import.meta.url): boolean {
+  if (!argv1) {
     return false;
   }
 
-  return resolve(invokedPath) === resolve(fileURLToPath(import.meta.url));
+  const modulePath = fileURLToPath(metaUrl);
+
+  try {
+    return realpathSync(resolve(argv1)) === realpathSync(modulePath);
+  } catch {
+    return resolve(argv1) === resolve(modulePath);
+  }
 }
 
 if (isDirectExecution()) {
-  void main().catch(async (error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    console.error(`\n${usage()}`);
-    await shutdown().catch(() => {});
-    process.exitCode = 1;
-  });
+  void runCli();
 }

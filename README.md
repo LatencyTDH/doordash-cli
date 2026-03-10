@@ -52,6 +52,12 @@ npm run build
 npm link
 ```
 
+`npm link` puts the CLI on your `PATH` with these command names:
+
+- `dd-cli`
+- `doordash-cli`
+- `Dd-cli` (compatibility alias; lowercase `dd-cli` is still the preferred spelling)
+
 If Playwright asks for browser binaries, install Chromium:
 
 ```bash
@@ -63,15 +69,25 @@ npx playwright install chromium
 Run the compiled CLI directly:
 
 ```bash
-node dist/cli.js --help
+node dist/bin.js --help
 ```
 
 Or after `npm link`:
 
 ```bash
 dd-cli --help
+dd-cli -h
+dd-cli
 doordash-cli --help
+dd-cli —help
+Dd-cli --help
 ```
+
+Notes:
+
+- `dd-cli` with no arguments prints usage/help instead of failing silently.
+- Common Unicode long dashes from messaging/mobile input are normalized for flags, so `—help` and `–help` work.
+- Shell commands are case-sensitive in general; `Dd-cli` is included only as a small compatibility alias. Prefer lowercase `dd-cli` in docs/scripts.
 
 Examples:
 
@@ -138,6 +154,7 @@ That opens Chromium, lets you sign in manually, then saves the browser state for
 - add-to-cart for quick-add items
 - add-to-cart for configurable items **when explicit `--options-json` selections are provided and all selected options are validated against item/menu data**
 - add-to-cart for standalone recommended add-ons that open a nested cursor-driven child step **when the child selections are supplied via `children` in `--options-json` and the group is a proven `recommended_option_*` standalone transport**
+- automatic stale-cart protection when switching restaurants: if the active cart belongs to a different store, `add-to-cart` clears the old `cartId` instead of trying to reuse it
 - update-cart by cart item id
 - direct address persistence for both:
   - saved addresses already present in the account's DoorDash address book
@@ -210,9 +227,10 @@ Validation commands:
 npm run typecheck
 npm run build
 npm test
-node dist/cli.js --help
-node dist/cli.js checkout
-node dist/cli.js cart --payment-method visa
+node dist/bin.js --help
+node dist/bin.js
+node dist/bin.js checkout
+node dist/bin.js cart --payment-method visa
 ```
 
 Expected behavior:
@@ -221,6 +239,7 @@ Expected behavior:
 - build passes
 - tests pass
 - help shows only the safe command surface
+- no-arg invocation prints usage/help
 - `checkout` fails immediately as blocked
 - unknown flags fail before any DoorDash work runs
 
@@ -229,4 +248,5 @@ Expected behavior:
 - Direct request builders, parsers, managed-browser import, and address/configurable-item helpers live in `src/direct-api.ts`
 - Safe command allowlist and command dispatch live in `src/lib.ts`
 - CLI parsing/output lives in `src/cli.ts`
+- Installed command entrypoints (`dd-cli`, `doordash-cli`, `Dd-cli`) resolve to `src/bin.ts`
 - Tests cover allowlist guardrails plus direct request-building and parsing helpers

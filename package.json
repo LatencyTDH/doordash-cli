@@ -6,8 +6,9 @@
   "private": true,
   "main": "dist/lib.js",
   "bin": {
-    "dd-cli": "dist/cli.js",
-    "doordash-cli": "dist/cli.js"
+    "dd-cli": "dist/bin.js",
+    "doordash-cli": "dist/bin.js",
+    "Dd-cli": "dist/bin.js"
   },
   "files": [
     "dist",
