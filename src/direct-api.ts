@@ -338,6 +338,63 @@ const GET_AVAILABLE_ADDRESSES_QUERY = `query getAvailableAddresses {
   }
 }`;
 
+const ADD_CONSUMER_ADDRESS_MUTATION = `mutation addConsumerAddressV2(
+  $lat: Float!
+  $lng: Float!
+  $city: String!
+  $state: String!
+  $zipCode: String!
+  $printableAddress: String!
+  $shortname: String!
+  $googlePlaceId: String!
+  $subpremise: String
+  $driverInstructions: String
+  $dropoffOptionId: String
+  $manualLat: Float
+  $manualLng: Float
+  $addressLinkType: AddressLinkType
+  $buildingName: String
+  $entryCode: String
+  $personalAddressLabel: PersonalAddressLabelInput
+  $addressId: String
+) {
+  addConsumerAddressV2(
+    lat: $lat
+    lng: $lng
+    city: $city
+    state: $state
+    zipCode: $zipCode
+    printableAddress: $printableAddress
+    shortname: $shortname
+    googlePlaceId: $googlePlaceId
+    subpremise: $subpremise
+    driverInstructions: $driverInstructions
+    dropoffOptionId: $dropoffOptionId
+    manualLat: $manualLat
+    manualLng: $manualLng
+    addressLinkType: $addressLinkType
+    buildingName: $buildingName
+    entryCode: $entryCode
+    personalAddressLabel: $personalAddressLabel
+    addressId: $addressId
+  ) {
+    defaultAddress {
+      id
+      addressId
+      printableAddress
+      shortname
+      zipCode
+      submarketId
+    }
+    availableAddresses {
+      id
+      addressId
+      printableAddress
+      shortname
+    }
+  }
+}`;
+
 const UPDATE_CONSUMER_DEFAULT_ADDRESS_MUTATION = `mutation updateConsumerDefaultAddressV2($defaultAddressId: ID!) {
   updateConsumerDefaultAddressV2(defaultAddressId: $defaultAddressId) {
     defaultAddress {
@@ -694,6 +751,7 @@ export type RequestedOptionSelection = {
   groupId: string;
   optionId: string;
   quantity?: number;
+  children?: RequestedOptionSelection[];
 };
 
 export type BuiltNestedOption = {
@@ -703,24 +761,24 @@ export type BuiltNestedOption = {
   itemExtraOption: {
     id: string;
     name: string;
-    description: string;
-    price: number;
-    itemExtraName: null;
     chargeAbove: number;
     defaultQuantity: number;
-    itemExtraId: string;
-    itemExtraNumFreeOptions: number;
-    menuItemExtraOptionPrice: number;
-    menuItemExtraOptionBasePrice: null;
+    description?: string;
+    price?: number;
+    itemExtraName?: null;
+    itemExtraId?: string;
+    itemExtraNumFreeOptions?: number;
+    menuItemExtraOptionPrice?: number;
+    menuItemExtraOptionBasePrice?: null;
   };
 };
 
 export type SetAddressResult = {
   success: true;
-  mode: "direct-saved-address";
+  mode: "direct-saved-address" | "direct-added-address";
   requestedAddress: string;
   matchedAddressId: string;
-  matchedAddressSource: "saved-address" | "autocomplete-address-id" | "autocomplete-text";
+  matchedAddressSource: "saved-address" | "autocomplete-address-id" | "autocomplete-text" | "add-consumer-address";
   printableAddress: string | null;
 };
 
@@ -741,6 +799,19 @@ export type AddToCartPayload = {
     unitPrice: number;
     cartId: string;
   };
+  lowPriorityBatchAddCartItemInput: Array<{
+    cartId: string;
+    storeId: string;
+    menuId: string;
+    itemId: string;
+    itemName: string;
+    currency: string;
+    quantity: number;
+    unitPrice: number;
+    isBundle: boolean;
+    bundleType: string;
+    nestedOptions: string;
+  }>;
   fulfillmentContext: {
     shouldUpdateFulfillment: boolean;
     fulfillmentType: string;
@@ -753,6 +824,50 @@ export type AddToCartPayload = {
   };
   returnCartFromOrderService: boolean;
   shouldKeepOnlyOneActiveCart: boolean;
+};
+
+type BuiltLowPriorityItem = {
+  storeId: string;
+  menuId: string;
+  itemId: string;
+  itemName: string;
+  currency: string;
+  quantity: number;
+  unitPrice: number;
+  nestedOptions: BuiltNestedOption[];
+};
+
+type BuiltOptionPayload = {
+  nestedOptions: BuiltNestedOption[];
+  lowPriorityItems: BuiltLowPriorityItem[];
+};
+
+type NestedOptionListsResolver = (input: {
+  restaurantId: string;
+  consumerId: string | null;
+  option: ItemOptionResult;
+  group: ItemOptionListResult;
+  selection: RequestedOptionSelection;
+}) => Promise<ItemOptionListResult[]>;
+
+type AddConsumerAddressPayload = {
+  lat: number;
+  lng: number;
+  city: string;
+  state: string;
+  zipCode: string;
+  printableAddress: string;
+  shortname: string;
+  googlePlaceId: string;
+  subpremise: null;
+  driverInstructions: null;
+  dropoffOptionId: null;
+  manualLat: null;
+  manualLng: null;
+  addressLinkType: "ADDRESS_LINK_TYPE_UNSPECIFIED";
+  buildingName: null;
+  entryCode: null;
+  personalAddressLabel: null;
 };
 
 export type UpdateCartPayload = {
@@ -802,6 +917,18 @@ type AvailableAddressGraph = {
 };
 
 type UpdateConsumerDefaultAddressGraph = {
+  defaultAddress?: {
+    id?: string | null;
+    addressId?: string | null;
+    printableAddress?: string | null;
+    shortname?: string | null;
+    zipCode?: string | null;
+    submarketId?: number | null;
+  } | null;
+  availableAddresses?: AvailableAddressGraph[] | null;
+};
+
+type AddConsumerAddressGraph = {
   defaultAddress?: {
     id?: string | null;
     addressId?: string | null;
@@ -964,27 +1091,40 @@ class DoorDashDirectSession {
     headers?: Record<string, string>;
     body?: string;
   }): Promise<{ status: number; text: string }> {
-    const page = await this.init();
-    return page.evaluate(
-      async ({ targetUrl, method, headers, body }) => {
-        const response = await fetch(targetUrl, {
-          method,
-          headers,
-          body,
-        });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const page = await this.init();
+      try {
+        return await page.evaluate(
+          async ({ targetUrl, method, headers, body }) => {
+            const response = await fetch(targetUrl, {
+              method,
+              headers,
+              body,
+            });
 
-        return {
-          status: response.status,
-          text: await response.text(),
-        };
-      },
-      {
-        targetUrl: input.url,
-        method: input.method ?? "GET",
-        headers: input.headers ?? {},
-        body: input.body,
-      },
-    );
+            return {
+              status: response.status,
+              text: await response.text(),
+            };
+          },
+          {
+            targetUrl: input.url,
+            method: input.method ?? "GET",
+            headers: input.headers ?? {},
+            body: input.body,
+          },
+        );
+      } catch (error) {
+        if (attempt === 1 || !isRetryablePageEvaluateError(error)) {
+          throw error;
+        }
+
+        await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => {});
+        await page.waitForTimeout(500).catch(() => {});
+      }
+    }
+
+    throw new Error(`DoorDash request failed for ${input.url}`);
   }
 
   private async maybeImportManagedBrowserSession(): Promise<void> {
@@ -1089,13 +1229,16 @@ export async function setAddressDirect(address: string): Promise<SetAddressResul
     prediction,
     createdAddress,
   });
-  if (!autocompleteMatch) {
-    throw new Error(
-      `Direct set-address currently supports only addresses already present in your DoorDash address book. DoorDash resolved "${requestedAddress}" via autocomplete/get-or-create, but it did not expose a saved defaultAddressId we could update safely.`,
-    );
+  if (autocompleteMatch) {
+    return updateConsumerDefaultAddressDirect(requestedAddress, autocompleteMatch);
   }
 
-  return updateConsumerDefaultAddressDirect(requestedAddress, autocompleteMatch);
+  const enrollmentPayload = buildAddConsumerAddressPayload({
+    requestedAddress,
+    prediction,
+    createdAddress,
+  });
+  return addConsumerAddressDirect(requestedAddress, enrollmentPayload);
 }
 
 export async function searchRestaurantsDirect(query: string, cuisine?: string): Promise<SearchResult> {
@@ -1170,8 +1313,9 @@ export async function addToCartDirect(params: {
 }): Promise<AddToCartResult> {
   const { item, itemDetail } = await resolveMenuItem(params.restaurantId, params.itemId, params.itemName);
   const currentCart = await getCartDirect();
+  const auth = await checkAuthDirect();
 
-  const payload = buildAddToCartPayload({
+  const payload = await buildAddToCartPayload({
     restaurantId: params.restaurantId,
     cartId: currentCart.cartId ?? "",
     quantity: params.quantity,
@@ -1179,6 +1323,7 @@ export async function addToCartDirect(params: {
     optionSelections: params.optionSelections ?? [],
     item,
     itemDetail,
+    consumerId: auth.consumerId,
   });
 
   const data = await session.graphql<{ addCartItemV2?: unknown }>("addCartItem", ADD_TO_CART_MUTATION, payload);
@@ -1237,7 +1382,7 @@ export function normalizeItemName(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-export function buildAddToCartPayload(input: {
+export async function buildAddToCartPayload(input: {
   restaurantId: string;
   cartId: string;
   quantity: number;
@@ -1245,7 +1390,9 @@ export function buildAddToCartPayload(input: {
   optionSelections?: RequestedOptionSelection[];
   item: MenuItemSummary;
   itemDetail: ItemResult;
-}): AddToCartPayload {
+  consumerId?: string | null;
+  resolveNestedOptionLists?: NestedOptionListsResolver;
+}): Promise<AddToCartPayload> {
   const header = input.itemDetail.item;
   if (!header.id || !header.name || !header.menuId || header.unitAmount == null || !header.currency) {
     throw new Error("DoorDash item details were incomplete; cannot build a cart mutation safely.");
@@ -1255,9 +1402,19 @@ export function buildAddToCartPayload(input: {
     throw new Error(`Invalid quantity: ${input.quantity}`);
   }
 
-  const nestedOptions = buildNestedOptionsPayload({
-    item: input.itemDetail.item,
+  const resolveNestedOptionLists =
+    input.resolveNestedOptionLists ??
+    (async ({ restaurantId, consumerId, option }) => fetchNestedOptionListsDirect({ restaurantId, consumerId, option }));
+
+  const builtOptions = await buildNestedOptionsPayload({
+    restaurantId: input.restaurantId,
+    menuId: header.menuId,
+    currency: header.currency,
+    consumerId: input.consumerId ?? null,
+    optionLists: input.itemDetail.item.optionLists,
     selections: input.optionSelections ?? [],
+    mode: "regular",
+    resolveNestedOptionLists,
   });
 
   return {
@@ -1269,7 +1426,7 @@ export function buildAddToCartPayload(input: {
       itemDescription: header.description,
       currency: header.currency,
       quantity: input.quantity,
-      nestedOptions: JSON.stringify(nestedOptions),
+      nestedOptions: JSON.stringify(builtOptions.nestedOptions),
       specialInstructions: input.specialInstructions,
       substitutionPreference: "substitute",
       isBundle: false,
@@ -1277,6 +1434,19 @@ export function buildAddToCartPayload(input: {
       unitPrice: header.unitAmount,
       cartId: input.cartId,
     },
+    lowPriorityBatchAddCartItemInput: builtOptions.lowPriorityItems.map((item) => ({
+      cartId: input.cartId,
+      storeId: item.storeId,
+      menuId: item.menuId,
+      itemId: item.itemId,
+      itemName: item.itemName,
+      currency: item.currency,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      isBundle: false,
+      bundleType: "BUNDLE_TYPE_UNSPECIFIED",
+      nestedOptions: JSON.stringify(item.nestedOptions),
+    })),
     fulfillmentContext: {
       shouldUpdateFulfillment: false,
       fulfillmentType: "Delivery",
@@ -1327,37 +1497,28 @@ export function buildUpdateCartPayload(input: {
 export function parseOptionSelectionsJson(value: string): RequestedOptionSelection[] {
   const parsed = safeJsonParse<unknown>(value);
   if (!Array.isArray(parsed)) {
-    throw new Error("--options-json must be a JSON array of { groupId, optionId, quantity? } objects.");
+    throw new Error("--options-json must be a JSON array of { groupId, optionId, quantity?, children? } objects.");
   }
 
-  return parsed.map((entry, index) => {
-    const object = asObject(entry);
-    const groupId = typeof object.groupId === "string" ? object.groupId.trim() : "";
-    const optionId = typeof object.optionId === "string" ? object.optionId.trim() : "";
-    const quantity = object.quantity == null ? undefined : Number.parseInt(String(object.quantity), 10);
-
-    if (!groupId || !optionId) {
-      throw new Error(`Invalid option selection at index ${index}. Each entry must include string groupId and optionId fields.`);
-    }
-    if (quantity !== undefined && (!Number.isInteger(quantity) || quantity < 1)) {
-      throw new Error(`Invalid option quantity at index ${index}: ${object.quantity}`);
-    }
-
-    return { groupId, optionId, ...(quantity === undefined ? {} : { quantity }) } satisfies RequestedOptionSelection;
-  });
+  return parsed.map((entry, index) => parseRequestedOptionSelection(entry, `index ${index}`));
 }
 
-function buildNestedOptionsPayload(input: {
-  item: ItemResult["item"];
+async function buildNestedOptionsPayload(input: {
+  restaurantId: string;
+  menuId: string;
+  currency: string;
+  consumerId: string | null;
+  optionLists: ItemOptionListResult[];
   selections: RequestedOptionSelection[];
-}): BuiltNestedOption[] {
+  mode: "regular" | "standalone-child";
+  resolveNestedOptionLists: NestedOptionListsResolver;
+}): Promise<BuiltOptionPayload> {
   const selections = normalizeRequestedOptionSelections(input.selections);
-  const optionLists = input.item.optionLists;
-  const requiredGroups = optionLists.filter((group) => group.minNumOptions > 0 && !group.isOptional);
+  const requiredGroups = input.optionLists.filter((group) => group.minNumOptions > 0 && !group.isOptional);
 
   if (selections.length === 0) {
     if (requiredGroups.length === 0) {
-      return [];
+      return { nestedOptions: [], lowPriorityItems: [] };
     }
 
     const labels = requiredGroups.map((group) => `${group.name} (${group.minNumOptions}-${group.maxNumOptions})`);
@@ -1366,8 +1527,11 @@ function buildNestedOptionsPayload(input: {
     );
   }
 
-  const groupsById = new Map(optionLists.map((group) => [group.id, group]));
-  const selectionsByGroup = new Map<string, Array<{ option: ItemOptionResult; quantity: number; group: ItemOptionListResult }>>();
+  const groupsById = new Map(input.optionLists.map((group) => [group.id, group]));
+  const selectionsByGroup = new Map<
+    string,
+    Array<{ selection: RequestedOptionSelection; option: ItemOptionResult; quantity: number; group: ItemOptionListResult }>
+  >();
 
   for (const selection of selections) {
     const group = groupsById.get(selection.groupId);
@@ -1380,17 +1544,124 @@ function buildNestedOptionsPayload(input: {
       throw new Error(`Unknown option ${selection.optionId} for group ${group.name} (${group.id}).`);
     }
 
-    if (option.nextCursor) {
-      throw new Error(
-        `Option ${option.name} (${option.id}) opens an additional nested configuration step. Nested cursor-driven option trees are not implemented safely yet, so the CLI refuses this payload.`,
-      );
-    }
-
     const entries = selectionsByGroup.get(group.id) ?? [];
-    entries.push({ option, quantity: selection.quantity ?? 1, group });
+    entries.push({ selection, option, quantity: selection.quantity ?? 1, group });
     selectionsByGroup.set(group.id, entries);
   }
 
+  validateSelectedOptionCounts(input.optionLists, selectionsByGroup);
+
+  const nestedOptions: BuiltNestedOption[] = [];
+  const lowPriorityItems: BuiltLowPriorityItem[] = [];
+
+  for (const group of input.optionLists) {
+    const selectedEntries = selectionsByGroup.get(group.id) ?? [];
+    for (const { selection, option, quantity } of selectedEntries) {
+      if (!option.nextCursor) {
+        if (selection.children && selection.children.length > 0) {
+          throw new Error(
+            `Option ${option.name} (${option.id}) does not open a nested configuration step, so child selections are invalid.`,
+          );
+        }
+
+        nestedOptions.push(
+          input.mode === "standalone-child"
+            ? buildStandaloneChildLeafOption({ option, quantity })
+            : buildRegularLeafOption({ option, quantity, group }),
+        );
+        continue;
+      }
+
+      if (!isStandaloneRecommendedGroup(group)) {
+        throw new Error(
+          `Option ${option.name} (${option.id}) opens an additional nested configuration step, but DoorDash's safe direct cart shape is only confirmed for standalone recommended add-on groups (recommended_option_*). Group ${group.id} does not match that transport, so the CLI refuses to guess.`,
+        );
+      }
+
+      const childOptionLists = await input.resolveNestedOptionLists({
+        restaurantId: input.restaurantId,
+        consumerId: input.consumerId,
+        option,
+        group,
+        selection,
+      });
+
+      const childPayload = await buildNestedOptionsPayload({
+        restaurantId: input.restaurantId,
+        menuId: input.menuId,
+        currency: input.currency,
+        consumerId: input.consumerId,
+        optionLists: childOptionLists,
+        selections: selection.children ?? [],
+        mode: "standalone-child",
+        resolveNestedOptionLists: input.resolveNestedOptionLists,
+      });
+
+      lowPriorityItems.push({
+        storeId: input.restaurantId,
+        menuId: input.menuId,
+        itemId: option.id,
+        itemName: option.name,
+        currency: input.currency,
+        quantity,
+        unitPrice: option.unitAmount ?? 0,
+        nestedOptions: childPayload.nestedOptions,
+      });
+      lowPriorityItems.push(...childPayload.lowPriorityItems);
+    }
+  }
+
+  return {
+    nestedOptions,
+    lowPriorityItems,
+  };
+}
+
+function buildRegularLeafOption(input: {
+  option: ItemOptionResult;
+  quantity: number;
+  group: ItemOptionListResult;
+}): BuiltNestedOption {
+  return {
+    id: input.option.id,
+    quantity: input.quantity,
+    options: [],
+    itemExtraOption: {
+      id: input.option.id,
+      name: input.option.name,
+      description: input.option.name,
+      price: input.option.unitAmount ?? 0,
+      itemExtraName: null,
+      chargeAbove: 0,
+      defaultQuantity: input.option.defaultQuantity ?? 0,
+      itemExtraId: input.group.id,
+      itemExtraNumFreeOptions: input.group.numFreeOptions,
+      menuItemExtraOptionPrice: input.option.unitAmount ?? 0,
+      menuItemExtraOptionBasePrice: null,
+    },
+  };
+}
+
+function buildStandaloneChildLeafOption(input: { option: ItemOptionResult; quantity: number }): BuiltNestedOption {
+  return {
+    id: input.option.id,
+    quantity: input.quantity,
+    options: [],
+    itemExtraOption: {
+      id: input.option.id,
+      name: input.option.name,
+      description: input.option.name,
+      price: input.option.unitAmount ?? 0,
+      chargeAbove: 0,
+      defaultQuantity: input.option.defaultQuantity ?? 0,
+    },
+  };
+}
+
+function validateSelectedOptionCounts(
+  optionLists: ItemOptionListResult[],
+  selectionsByGroup: Map<string, Array<{ quantity: number }>>,
+): void {
   for (const group of optionLists) {
     const selectedEntries = selectionsByGroup.get(group.id) ?? [];
     const selectedCount = selectedEntries.reduce((sum, entry) => sum + entry.quantity, 0);
@@ -1403,28 +1674,39 @@ function buildNestedOptionsPayload(input: {
       throw new Error(`Too many selections for ${group.name}. Maximum is ${group.maxNumOptions}.`);
     }
   }
+}
 
-  return optionLists.flatMap((group) => {
-    const selectedEntries = selectionsByGroup.get(group.id) ?? [];
-    return selectedEntries.map(({ option, quantity }) => ({
-      id: option.id,
-      quantity,
-      options: [],
-      itemExtraOption: {
-        id: option.id,
-        name: option.name,
-        description: option.name,
-        price: option.unitAmount ?? 0,
-        itemExtraName: null,
-        chargeAbove: 0,
-        defaultQuantity: option.defaultQuantity ?? 0,
-        itemExtraId: group.id,
-        itemExtraNumFreeOptions: group.numFreeOptions,
-        menuItemExtraOptionPrice: option.unitAmount ?? 0,
-        menuItemExtraOptionBasePrice: null,
-      },
-    } satisfies BuiltNestedOption));
-  });
+function isStandaloneRecommendedGroup(group: ItemOptionListResult): boolean {
+  return group.id.startsWith("recommended_option_");
+}
+
+function parseRequestedOptionSelection(entry: unknown, label: string): RequestedOptionSelection {
+  const object = asObject(entry);
+  const groupId = typeof object.groupId === "string" ? object.groupId.trim() : "";
+  const optionId = typeof object.optionId === "string" ? object.optionId.trim() : "";
+  const quantity = object.quantity == null ? undefined : Number.parseInt(String(object.quantity), 10);
+  const childrenRaw = object.children;
+
+  if (!groupId || !optionId) {
+    throw new Error(`Invalid option selection at ${label}. Each entry must include string groupId and optionId fields.`);
+  }
+  if (quantity !== undefined && (!Number.isInteger(quantity) || quantity < 1)) {
+    throw new Error(`Invalid option quantity at ${label}: ${object.quantity}`);
+  }
+  if (childrenRaw !== undefined && !Array.isArray(childrenRaw)) {
+    throw new Error(`Invalid option children at ${label}. children must be an array when provided.`);
+  }
+
+  const children = Array.isArray(childrenRaw)
+    ? childrenRaw.map((child, index) => parseRequestedOptionSelection(child, `${label}.children[${index}]`))
+    : undefined;
+
+  return {
+    groupId,
+    optionId,
+    ...(quantity === undefined ? {} : { quantity }),
+    ...(children === undefined ? {} : { children }),
+  } satisfies RequestedOptionSelection;
 }
 
 function normalizeRequestedOptionSelections(selections: RequestedOptionSelection[]): RequestedOptionSelection[] {
@@ -1434,6 +1716,7 @@ function normalizeRequestedOptionSelections(selections: RequestedOptionSelection
     const groupId = selection.groupId.trim();
     const optionId = selection.optionId.trim();
     const quantity = selection.quantity ?? 1;
+    const children = selection.children ? normalizeRequestedOptionSelections(selection.children) : undefined;
 
     if (!groupId || !optionId) {
       throw new Error("Option selections must include non-empty groupId and optionId values.");
@@ -1445,13 +1728,44 @@ function normalizeRequestedOptionSelections(selections: RequestedOptionSelection
     const key = `${groupId}:${optionId}`;
     const previous = aggregated.get(key);
     if (previous) {
+      if ((previous.children && previous.children.length > 0) || (children && children.length > 0)) {
+        throw new Error(
+          `Duplicate option selections for ${groupId}/${optionId} are only supported when no nested child selections are attached.`,
+        );
+      }
       aggregated.set(key, { ...previous, quantity: (previous.quantity ?? 1) + quantity });
     } else {
-      aggregated.set(key, { groupId, optionId, quantity });
+      aggregated.set(key, { groupId, optionId, quantity, ...(children ? { children } : {}) });
     }
   }
 
   return [...aggregated.values()];
+}
+
+async function fetchNestedOptionListsDirect(input: {
+  restaurantId: string;
+  consumerId: string | null;
+  option: ItemOptionResult;
+}): Promise<ItemOptionListResult[]> {
+  if (!input.option.nextCursor) {
+    return [];
+  }
+
+  const data = await session.graphql<{ itemPage?: unknown }>("itemPage", ITEM_QUERY, {
+    storeId: input.restaurantId,
+    itemId: input.option.id,
+    consumerId: input.consumerId,
+    isMerchantPreview: false,
+    isNested: true,
+    fulfillmentType: "Delivery",
+    cursorContext: {
+      itemCursor: input.option.nextCursor,
+    },
+  });
+
+  const root = asObject(data.itemPage);
+  const optionLists = Array.isArray(root.optionLists) ? root.optionLists : [];
+  return optionLists.map(parseOptionList);
 }
 
 async function getAvailableAddressesDirect(): Promise<AvailableAddressGraph[]> {
@@ -1500,6 +1814,86 @@ async function getOrCreateAddressDirect(prediction: AddressAutocompletePredictio
   });
 
   return response.address ?? null;
+}
+
+export function buildAddConsumerAddressPayload(input: {
+  requestedAddress: string;
+  prediction: AddressAutocompletePrediction;
+  createdAddress: GeoAddressResponse["address"];
+}): AddConsumerAddressPayload {
+  const createdAddress = input.createdAddress;
+  const lat = typeof createdAddress?.lat === "number" ? createdAddress.lat : input.prediction.lat;
+  const lng = typeof createdAddress?.lng === "number" ? createdAddress.lng : input.prediction.lng;
+  const city = firstNonEmptyString(createdAddress?.locality, input.prediction.locality);
+  const state = firstNonEmptyString(createdAddress?.administrative_area_level1, input.prediction.administrative_area_level1);
+  const zipCode = firstNonEmptyString(createdAddress?.postal_code, combinePostalCode(input.prediction));
+  const printableAddress = firstNonEmptyString(
+    createdAddress?.formatted_address,
+    input.prediction.formatted_address,
+    input.requestedAddress,
+  );
+  const shortname = firstNonEmptyString(
+    createdAddress?.formatted_address_short,
+    input.prediction.formatted_address_short,
+    input.requestedAddress,
+  );
+  const googlePlaceId = firstNonEmptyString(input.prediction.source_place_id);
+
+  if (typeof lat !== "number" || typeof lng !== "number") {
+    throw new Error(`DoorDash did not return stable coordinates for "${input.requestedAddress}".`);
+  }
+  if (!city || !state || !zipCode || !printableAddress || !shortname || !googlePlaceId) {
+    throw new Error(
+      `DoorDash resolved "${input.requestedAddress}", but the addConsumerAddressV2 payload was incomplete. city=${city ?? ""} state=${state ?? ""} zip=${zipCode ?? ""} shortname=${shortname ?? ""} googlePlaceId=${googlePlaceId ? "present" : "missing"}`,
+    );
+  }
+
+  return {
+    lat,
+    lng,
+    city,
+    state,
+    zipCode,
+    printableAddress,
+    shortname,
+    googlePlaceId,
+    subpremise: null,
+    driverInstructions: null,
+    dropoffOptionId: null,
+    manualLat: null,
+    manualLng: null,
+    addressLinkType: "ADDRESS_LINK_TYPE_UNSPECIFIED",
+    buildingName: null,
+    entryCode: null,
+    personalAddressLabel: null,
+  };
+}
+
+async function addConsumerAddressDirect(requestedAddress: string, payload: AddConsumerAddressPayload): Promise<SetAddressResult> {
+  const data = await session.graphql<{ addConsumerAddressV2?: AddConsumerAddressGraph | null }>(
+    "addConsumerAddressV2",
+    ADD_CONSUMER_ADDRESS_MUTATION,
+    payload,
+  );
+
+  const defaultAddress = data.addConsumerAddressV2?.defaultAddress ?? null;
+  const matchedAddressId = typeof defaultAddress?.id === "string" ? defaultAddress.id : "";
+  if (!matchedAddressId) {
+    throw new Error(
+      `DoorDash accepted addConsumerAddressV2 for "${requestedAddress}", but it did not return a saved defaultAddress id. The CLI is refusing to guess follow-up address state.`,
+    );
+  }
+
+  await session.saveState();
+
+  return {
+    success: true,
+    mode: "direct-added-address",
+    requestedAddress,
+    matchedAddressId,
+    matchedAddressSource: "add-consumer-address",
+    printableAddress: defaultAddress?.printableAddress ?? payload.printableAddress,
+  };
 }
 
 async function updateConsumerDefaultAddressDirect(
@@ -1586,6 +1980,24 @@ export function resolveAvailableAddressMatch(input: {
     }
   }
 
+  return null;
+}
+
+function combinePostalCode(prediction: AddressAutocompletePrediction): string | null {
+  const postalCode = typeof prediction.postal_code === "string" ? prediction.postal_code.trim() : "";
+  const suffix = typeof prediction.postal_code_suffix === "string" ? prediction.postal_code_suffix.trim() : "";
+  if (!postalCode) {
+    return null;
+  }
+  return suffix ? `${postalCode}-${suffix}` : postalCode;
+}
+
+function firstNonEmptyString(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
   return null;
 }
 
@@ -2045,6 +2457,16 @@ function parseGraphQlResponse<T>(operationName: string, status: number, text: st
 
 function asObject(value: unknown): Record<string, any> {
   return value && typeof value === "object" ? (value as Record<string, any>) : {};
+}
+
+function isRetryablePageEvaluateError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /Execution context was destroyed|Cannot find context with specified id|Target page, context or browser has been closed/i.test(
+    error.message,
+  );
 }
 
 function safeJsonParse<T>(value: string | undefined): T | null {

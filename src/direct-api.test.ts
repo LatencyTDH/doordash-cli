@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildAddConsumerAddressPayload,
   buildAddToCartPayload,
   buildUpdateCartPayload,
   normalizeItemName,
@@ -157,12 +158,18 @@ test("parseSearchRestaurantRow extracts restaurant metadata from facet rows", ()
   });
 });
 
-test("parseOptionSelectionsJson parses structured option selections", () => {
+test("parseOptionSelectionsJson parses structured recursive option selections", () => {
   assert.deepEqual(
-    parseOptionSelectionsJson('[{"groupId":"703393388","optionId":"4716032529"},{"groupId":"703393389","optionId":"4716042466","quantity":2}]'),
+    parseOptionSelectionsJson(
+      '[{"groupId":"703393388","optionId":"4716032529"},{"groupId":"recommended_option_546935995","optionId":"546936011","children":[{"groupId":"780057412","optionId":"4702669757","quantity":2}]}]',
+    ),
     [
       { groupId: "703393388", optionId: "4716032529" },
-      { groupId: "703393389", optionId: "4716042466", quantity: 2 },
+      {
+        groupId: "recommended_option_546935995",
+        optionId: "546936011",
+        children: [{ groupId: "780057412", optionId: "4702669757", quantity: 2 }],
+      },
     ],
   );
 });
@@ -173,6 +180,10 @@ test("parseOptionSelectionsJson rejects malformed payloads", () => {
   assert.throws(
     () => parseOptionSelectionsJson('[{"groupId":"703393388","optionId":"4716032529","quantity":0}]'),
     /Invalid option quantity/,
+  );
+  assert.throws(
+    () => parseOptionSelectionsJson('[{"groupId":"703393388","optionId":"4716032529","children":{}}]'),
+    /children must be an array/,
   );
 });
 
@@ -224,8 +235,54 @@ test("resolveAvailableAddressMatch falls back to printable/shortname text matchi
   });
 });
 
-test("buildAddToCartPayload blocks required-option items when no selections are provided", () => {
-  assert.throws(
+test("buildAddConsumerAddressPayload maps autocomplete/get-or-create data into addConsumerAddressV2 variables", () => {
+  const payload = buildAddConsumerAddressPayload({
+    requestedAddress: "11 Wall St, New York, NY 10005",
+    prediction: {
+      source_place_id: "ChIJ8fw4t0hawokRk1YdVjndM9w",
+      formatted_address: "11 Wall St, New York, NY 10005, USA",
+      formatted_address_short: "11 Wall St",
+      locality: "New York",
+      administrative_area_level1: "NY",
+      postal_code: "10005",
+      lat: 40.707757,
+      lng: -74.010045,
+    },
+    createdAddress: {
+      id: "1386875882",
+      formatted_address: "11 Wall St, New York, NY 10005, USA",
+      formatted_address_short: "11 Wall St",
+      locality: "New York",
+      administrative_area_level1: "NY",
+      postal_code: "10005",
+      lat: 40.707757,
+      lng: -74.010045,
+    },
+  });
+
+  assert.deepEqual(payload, {
+    lat: 40.707757,
+    lng: -74.010045,
+    city: "New York",
+    state: "NY",
+    zipCode: "10005",
+    printableAddress: "11 Wall St, New York, NY 10005, USA",
+    shortname: "11 Wall St",
+    googlePlaceId: "ChIJ8fw4t0hawokRk1YdVjndM9w",
+    subpremise: null,
+    driverInstructions: null,
+    dropoffOptionId: null,
+    manualLat: null,
+    manualLng: null,
+    addressLinkType: "ADDRESS_LINK_TYPE_UNSPECIFIED",
+    buildingName: null,
+    entryCode: null,
+    personalAddressLabel: null,
+  });
+});
+
+test("buildAddToCartPayload blocks required-option items when no selections are provided", async () => {
+  await assert.rejects(
     () =>
       buildAddToCartPayload({
         restaurantId: "1721744",
@@ -248,8 +305,8 @@ test("buildAddToCartPayload blocks required-option items when no selections are 
   );
 });
 
-test("buildAddToCartPayload preserves the captured DoorDash request shape for quick-add items", () => {
-  const payload = buildAddToCartPayload({
+test("buildAddToCartPayload preserves the captured DoorDash request shape for quick-add items", async () => {
+  const payload = await buildAddToCartPayload({
     restaurantId: "1721744",
     cartId: "90a554a1-cc69-462b-8860-911ddf2d7f88",
     quantity: 2,
@@ -303,6 +360,7 @@ test("buildAddToCartPayload preserves the captured DoorDash request shape for qu
       unitPrice: 4900,
       cartId: "90a554a1-cc69-462b-8860-911ddf2d7f88",
     },
+    lowPriorityBatchAddCartItemInput: [],
     fulfillmentContext: {
       shouldUpdateFulfillment: false,
       fulfillmentType: "Delivery",
@@ -318,8 +376,8 @@ test("buildAddToCartPayload preserves the captured DoorDash request shape for qu
   });
 });
 
-test("buildAddToCartPayload builds validated nestedOptions for configurable items", () => {
-  const payload = buildAddToCartPayload({
+test("buildAddToCartPayload builds validated nestedOptions for configurable items", async () => {
+  const payload = await buildAddToCartPayload({
     restaurantId: "1721744",
     cartId: "90a554a1-cc69-462b-8860-911ddf2d7f88",
     quantity: 1,
@@ -380,13 +438,113 @@ test("buildAddToCartPayload builds validated nestedOptions for configurable item
   ]);
 });
 
-test("buildAddToCartPayload rejects selected options that open nested cursor-driven trees", () => {
+test("buildAddToCartPayload routes standalone recommended next-cursor items into lowPriorityBatchAddCartItemInput", async () => {
+  const detail = configurableItemDetail();
+  detail.item.optionLists.push({
+    id: "recommended_option_546935995",
+    name: "Recommended Beverages",
+    subtitle: null,
+    minNumOptions: 0,
+    maxNumOptions: 10,
+    numFreeOptions: 0,
+    isOptional: true,
+    options: [
+      {
+        id: "546936011",
+        name: "Sake (salmon)",
+        displayPrice: "+$5.00",
+        unitAmount: 500,
+        defaultQuantity: 0,
+        nextCursor: "opaque-next-cursor",
+      },
+    ],
+  });
+
+  const payload = await buildAddToCartPayload({
+    restaurantId: "1721744",
+    cartId: "90a554a1-cc69-462b-8860-911ddf2d7f88",
+    quantity: 1,
+    specialInstructions: null,
+    optionSelections: [
+      { groupId: "703393388", optionId: "4716032529" },
+      { groupId: "703393389", optionId: "4716042466" },
+      {
+        groupId: "recommended_option_546935995",
+        optionId: "546936011",
+        children: [{ groupId: "780057412", optionId: "4702669757" }],
+      },
+    ],
+    item: {
+      id: "546936015",
+      name: "Two roll selection",
+      description: "Spicy tuna, salmon avo, eel cuc, yellowtail scallion, California Roll.",
+      displayPrice: "$18.98",
+      imageUrl: null,
+      nextCursor: null,
+      storeId: "1721744",
+    },
+    itemDetail: detail,
+    resolveNestedOptionLists: async () => [
+      {
+        id: "780057412",
+        name: "Choice",
+        subtitle: "Select 1",
+        minNumOptions: 1,
+        maxNumOptions: 1,
+        numFreeOptions: 0,
+        isOptional: false,
+        options: [
+          {
+            id: "4702669757",
+            name: "sashimi",
+            displayPrice: "",
+            unitAmount: 0,
+            defaultQuantity: 0,
+            nextCursor: null,
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(payload.lowPriorityBatchAddCartItemInput, [
+    {
+      cartId: "90a554a1-cc69-462b-8860-911ddf2d7f88",
+      storeId: "1721744",
+      menuId: "2181443",
+      itemId: "546936011",
+      itemName: "Sake (salmon)",
+      currency: "USD",
+      quantity: 1,
+      unitPrice: 500,
+      isBundle: false,
+      bundleType: "BUNDLE_TYPE_UNSPECIFIED",
+      nestedOptions: JSON.stringify([
+        {
+          id: "4702669757",
+          quantity: 1,
+          options: [],
+          itemExtraOption: {
+            id: "4702669757",
+            name: "sashimi",
+            description: "sashimi",
+            price: 0,
+            chargeAbove: 0,
+            defaultQuantity: 0,
+          },
+        },
+      ]),
+    },
+  ]);
+});
+
+test("buildAddToCartPayload still fails closed for non-recommended next-cursor groups", async () => {
   const detail = configurableItemDetail();
   const nestedOption = detail.item.optionLists[1]?.options[0];
   assert.ok(nestedOption);
   nestedOption.nextCursor = "opaque-next-cursor";
 
-  assert.throws(
+  await assert.rejects(
     () =>
       buildAddToCartPayload({
         restaurantId: "1721744",
@@ -407,8 +565,9 @@ test("buildAddToCartPayload rejects selected options that open nested cursor-dri
           storeId: "1721744",
         },
         itemDetail: detail,
+        resolveNestedOptionLists: async () => [],
       }),
-    /nested configuration step/,
+    /safe direct cart shape is only confirmed for standalone recommended add-on groups/,
   );
 });
 
