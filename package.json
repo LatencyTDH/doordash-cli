@@ -7,13 +7,11 @@
   "main": "dist/lib.js",
   "bin": {
     "dd-cli": "dist/bin.js",
-    "doordash-cli": "dist/bin.js",
-    "Dd-cli": "dist/bin.js"
+    "doordash-cli": "dist/bin.js"
   },
   "man": [
     "man/dd-cli.1",
-    "man/doordash-cli.1",
-    "man/Dd-cli.1"
+    "man/doordash-cli.1"
   ],
   "files": [
     "dist",

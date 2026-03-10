@@ -6,7 +6,7 @@ man_root="${XDG_DATA_HOME:-$HOME/.local/share}/man/man1"
 
 mkdir -p "$man_root"
 
-for page in dd-cli.1 doordash-cli.1 Dd-cli.1; do
+for page in dd-cli.1 doordash-cli.1; do
   ln -sfn "$repo_root/man/$page" "$man_root/$page"
 done
 

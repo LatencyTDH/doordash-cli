@@ -28,7 +28,7 @@ export function usage(): string {
     "  - Run with no arguments to show this help.",
     "  - -h / --help are supported.",
     "  - Common Unicode long dashes are normalized for flags, so —help / –help work too.",
-    "  - Preferred command spelling is lowercase; Dd-cli is provided as a compatibility alias after npm link.",
+    "  - Installed command names are lowercase only: dd-cli and doordash-cli.",
     "  - Manual pages ship with the project: man dd-cli or man doordash-cli.",
     "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, cart, add-to-cart, and update-cart.",
     "  - auth-check can import an already-signed-in compatible managed-browser DoorDash session when one is available.",
