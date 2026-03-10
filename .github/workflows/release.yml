@@ -1,0 +1,120 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview the release without pushing commits/tags or creating a GitHub Release"
+        required: false
+        default: false
+        type: boolean
+      version:
+        description: "Optional exact version override (defaults to the conventional-commit recommended version)"
+        required: false
+        type: string
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out main with full history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Configure Git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Ensure local main tracks origin/main
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin main
+          git checkout main
+          git branch --set-upstream-to=origin/main main
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute release version
+        id: next
+        shell: bash
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$VERSION_INPUT" ]]; then
+            echo "version=$VERSION_INPUT" >> "$GITHUB_OUTPUT"
+            echo "source=manual-override" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          next_version="$(npx release-it --release-version --ci --no-github.release --no-git.push | tail -n1 | tr -d '[:space:]')"
+
+          if [[ -z "$next_version" || "$next_version" == "undefined" ]]; then
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "source=auto-noop" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "version=$next_version" >> "$GITHUB_OUTPUT"
+          echo "source=auto" >> "$GITHUB_OUTPUT"
+
+      - name: Stop cleanly when there is nothing to release
+        if: ${{ steps.next.outputs.version == '' }}
+        run: |
+          echo "No releasable conventional commits were found since the last tag. Skipping release." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run release-it
+        if: ${{ steps.next.outputs.version != '' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_INPUT: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          args=(--ci)
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            args+=(--dry-run --no-git.push --no-github.release)
+          fi
+
+          if [[ -n "$VERSION_INPUT" ]]; then
+            args+=("$VERSION_INPUT")
+          fi
+
+          npx release-it "${args[@]}"
+
+      - name: Summarize release run
+        if: ${{ steps.next.outputs.version != '' }}
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+          SOURCE: ${{ steps.next.outputs.source }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "### Release run"
+            echo
+            echo "- Version: \\`$VERSION\\`"
+            echo "- Version source: \\`$SOURCE\\`"
+            echo "- Dry run: \\`$DRY_RUN\\`"
+          } >> "$GITHUB_STEP_SUMMARY"
