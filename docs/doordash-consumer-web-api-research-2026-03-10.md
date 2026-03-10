@@ -144,11 +144,25 @@ The UI clearly winds up with:
 - `localStorage.submarket_id`
 - `dd_market_id` cookie
 
-But the exact persistence sequence is still unresolved.
+### 2026-03-10 addendum: resolved mutation path
+
+After searching the live consumer-web bundle, the exact new-address save mutation was identified in production JS:
+
+- mutation name: `addConsumerAddressV2`
+- required core variables: `lat`, `lng`, `city`, `state`, `zipCode`, `printableAddress`, `shortname`, `googlePlaceId`
+- optional nullable variables used by the UI form: `subpremise`, `driverInstructions`, `dropoffOptionId`, `manualLat`, `manualLng`, `addressLinkType`, `buildingName`, `entryCode`, `personalAddressLabel`, `addressId`
+
+The browser save flow is therefore:
+
+1. autocomplete (`/unified-gateway/geo-intelligence/v2/address/autocomplete`)
+2. geo get-or-create (`/unified-gateway/geo-intelligence/v2/address/get-or-create`)
+3. GraphQL `addConsumerAddressV2(...)`
+
+The direct CLI can safely enroll a brand-new freeform address by building the exact `addConsumerAddressV2` variable payload from the autocomplete + get-or-create result and letting DoorDash persist it.
 
 ### Practical conclusion
 
-Direct **address lookup** is confirmed. Direct **address persistence / active delivery context set** is **partially understood but not yet safely implemented**.
+Direct **address lookup** is confirmed. Direct **address persistence / active delivery context set** is now **safely implemented** via `addConsumerAddressV2` for new addresses and `updateConsumerDefaultAddressV2` for already-saved addresses.
 
 ## 4) Restaurant search
 
@@ -344,9 +358,24 @@ The read path for cart state is in very good shape for a direct client.
 
 A guest cart was successfully created and returned a real `cartId`, line items, restaurant info, and pricing.
 
+### 2026-03-10 addendum: nested standalone recommended items
+
+The production bundle's cart builder (`chunks/8427-*.js`) shows two parallel payload channels:
+
+- `addCartItemInput.nestedOptions` for ordinary modifier trees
+- `lowPriorityBatchAddCartItemInput` for selected child items whose parent is flagged `isStandaloneItem`
+
+A live direct mutation confirmed the transport for standalone recommended add-ons that open a cursor-driven subconfiguration step:
+
+- parent item remains in `addCartItemInput`
+- the standalone add-on is emitted as its own `lowPriorityBatchAddCartItemInput[]` entry
+- the child add-on's own required selections become that low-priority item's `nestedOptions`
+
+For the observed Sushi 35 example, the main item stayed `Two roll selection`, while `Sake (salmon)` was added as a separate low-priority cart item with nested option `sashimi`.
+
 ### Practical conclusion
 
-Direct add-to-cart is confirmed viable in a guest session.
+Direct add-to-cart is confirmed viable in a guest/session-backed context, including validated standalone recommended nested cursor add-ons through `lowPriorityBatchAddCartItemInput`.
 
 ## 8) Cart update
 

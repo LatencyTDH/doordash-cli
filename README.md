@@ -137,26 +137,29 @@ That opens Chromium, lets you sign in manually, then saves the browser state for
 - cart read
 - add-to-cart for quick-add items
 - add-to-cart for configurable items **when explicit `--options-json` selections are provided and all selected options are validated against item/menu data**
+- add-to-cart for standalone recommended add-ons that open a nested cursor-driven child step **when the child selections are supplied via `children` in `--options-json` and the group is a proven `recommended_option_*` standalone transport**
 - update-cart by cart item id
-- direct default-address persistence **for addresses already present in the account's DoorDash address book**
+- direct address persistence for both:
+  - saved addresses already present in the account's DoorDash address book
+  - brand-new freeform addresses resolved through DoorDash autocomplete + geo `get-or-create` + `addConsumerAddressV2`
 
 ### Not implemented / intentionally limited
 
 - checkout / order placement / tracking / payment
-- auto-enrolling a brand-new address into the DoorDash address book from freeform text
-- nested cursor-driven option trees (options that open another configuration step)
+- non-recommended nested cursor-driven option trees whose transport is not yet directly provable from DoorDash's standalone-item batch cart path
 
 If the CLI cannot prove a payload safely from known item/address data, it fails closed with a clear message instead of guessing.
 
 ## `set-address` note
 
-`set-address` is now direct for saved addresses:
+`set-address` is now direct for both saved and brand-new addresses:
 
-- the CLI looks for a match in `getAvailableAddresses`
-- if needed, it uses autocomplete + geo `get-or-create` to resolve the input
-- it then calls `updateConsumerDefaultAddressV2(defaultAddressId)` when DoorDash exposes a matching saved address
+- the CLI first looks for a match in `getAvailableAddresses`
+- if needed, it uses autocomplete + geo `get-or-create` to resolve the freeform text
+- when DoorDash already exposes a matching saved address, it calls `updateConsumerDefaultAddressV2(defaultAddressId)`
+- otherwise it builds the exact `addConsumerAddressV2(...)` mutation payload DoorDash web uses for new-address enrollment and lets DoorDash persist the address directly
 
-If DoorDash resolves the text but does **not** expose a saved `defaultAddressId`, the CLI refuses to guess the consumer-address enrollment mutation and exits with a blocker message.
+The CLI still fails closed if DoorDash resolves the text but omits required fields for a complete `addConsumerAddressV2` payload (for example, missing stable coordinates or place id).
 
 ## Configurable items note
 
@@ -169,12 +172,28 @@ For items with required option groups, pass `--options-json` as a JSON array of 
 ]
 ```
 
+Nested standalone recommended add-ons use recursive `children` selections:
+
+```json
+[
+  { "groupId": "703393388", "optionId": "4716032529" },
+  { "groupId": "703393389", "optionId": "4716042466" },
+  {
+    "groupId": "recommended_option_546935995",
+    "optionId": "546936011",
+    "children": [{ "groupId": "780057412", "optionId": "4702669757" }]
+  }
+]
+```
+
 Guardrails:
 
 - unknown group IDs are rejected
 - unknown option IDs are rejected
 - min/max group counts are enforced
-- options with `nextCursor` are rejected because they open a nested configuration step the CLI has not safely implemented yet
+- duplicate selections with nested `children` are rejected
+- only DoorDash's proven standalone recommended-item transport (`recommended_option_*` → `lowPriorityBatchAddCartItemInput`) is used for nested cursor steps
+- other non-recommended `nextCursor` trees still fail closed instead of guessing a cart shape
 
 ## Security caveats
 
