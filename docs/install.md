@@ -1,16 +1,16 @@
 # Install and first run
 
-## Global install
+## Preferred global install
 
 ```bash
 npm install -g doordash-cli
 ```
 
-When the npm package is available, that installs both lowercase command names: `doordash-cli` and `dd-cli`.
+That is the long-term default install path. Once npm publication is live, it installs both lowercase command names: `doordash-cli` and `dd-cli`.
 
-## Source checkout
+## Install from source today
 
-Until then:
+Before npm publication is enabled, install from a checkout:
 
 ```bash
 git clone https://github.com/seans-openclawbot/doordash-cli.git
@@ -19,15 +19,19 @@ npm install
 npm link
 ```
 
-If you prefer to run from a checkout without linking:
+After `npm link`, both `doordash-cli` and `dd-cli` resolve globally from your checkout.
+
+## Run from a checkout without linking
 
 ```bash
 npm run cli -- --help
 ```
 
-## Browser prerequisite
+If you stay in checkout mode, replace `doordash-cli` with `npm run cli --` in the examples below.
 
-Install the matching Playwright Chromium build if you plan to use `auth-bootstrap`.
+## Install the browser once
+
+If you plan to use `auth-bootstrap`, install the matching Playwright Chromium build:
 
 ### Global or linked install
 
@@ -50,20 +54,8 @@ doordash-cli set-address --address "350 5th Ave, New York, NY 10118"
 doordash-cli search --query sushi
 ```
 
-If you are running from a checkout without `npm link`, replace `doordash-cli` with `npm run cli --`.
-
 ## Session reuse
 
 If you already have a compatible signed-in DoorDash browser session available, direct commands may reuse it instead of opening a fresh browser context.
 
 If not, run `doordash-cli auth-bootstrap` once to save reusable state for later commands.
-
-## Maintainer verification
-
-Use these when changing install or packaging behavior:
-
-```bash
-npm run validate
-npm pack --dry-run
-npm run smoke:pack
-```

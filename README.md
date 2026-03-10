@@ -15,17 +15,19 @@ It stops before checkout.
 
 ## Install
 
-### Global install
+### Preferred global install
 
 ```bash
 npm install -g doordash-cli
 ```
 
-When the npm package is available, that installs both lowercase command names: `doordash-cli` and `dd-cli`.
+That is the long-term default install path. Once npm publication is live, it installs both lowercase command names: `doordash-cli` and `dd-cli`.
 
-### Source checkout
+For the full install and first-run guide, see [docs/install.md](docs/install.md).
 
-Until then:
+### Install from source today
+
+Before npm publication is enabled, use a checkout:
 
 ```bash
 git clone https://github.com/seans-openclawbot/doordash-cli.git
@@ -42,7 +44,7 @@ npm run cli -- --help
 
 ### Browser prerequisite
 
-If Playwright needs Chromium for `auth-bootstrap`:
+If you plan to use `auth-bootstrap`, install Playwright's Chromium build once:
 
 ```bash
 doordash-cli install-browser
