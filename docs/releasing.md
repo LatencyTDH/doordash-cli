@@ -12,7 +12,7 @@ The project uses Semantic Versioning.
 
 While the CLI is still `< 1.0.0`, breaking changes bump the **minor** version instead of jumping straight to `1.0.0`. That keeps early releases honest without burning major versions too early.
 
-The manifest is intentionally bootstrapped from `0.0.0` until the first real release PR lands. That tells Release Please to keep the initial managed release in the `0.x` line instead of pretending the project already crossed into `1.0.0`.
+The first Release Please-managed release is explicitly pinned to `0.1.0` via `initial-version`. That keeps the project honestly on the `0.x` track until maintainers intentionally decide it is ready for `1.0.0`.
 
 ## Merge discipline
 
