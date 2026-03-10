@@ -1,11 +1,21 @@
 # DoorDash consumer web API research
 
 _Date:_ 2026-03-10  
-_Status:_ reverse-engineering report; **not** yet wired into the CLI as the default transport
+_Status:_ historical reverse-engineering report. The repo has **since** shipped the direct GraphQL/HTTP transport as the default path for the cart-safe CLI surface; treat the implementation status below as a time-stamped research snapshot unless a later note overrides it.
+
+## Status update for the current repo
+
+Since this report was written, the CLI now uses the direct consumer-web transport by default for `auth-check`, `set-address`, `search`, `menu`, `item`, `cart`, `add-to-cart`, and `update-cart`.
+
+Current known limits still match the safety posture from this research:
+
+- `set-address` still fails closed when DoorDash does not expose a saved `defaultAddressId`
+- nested cursor-driven option trees are still rejected instead of guessed
+- checkout, payment, order placement, and tracking remain intentionally out of scope
 
 ## Executive summary
 
-A direct consumer-web API path looks **viable** for the cart-safe workflow, and materially better than DOM-driven Playwright for most of the CLI surface.
+At the time of this research, a direct consumer-web API path looked **viable** for the cart-safe workflow, and materially better than DOM-driven Playwright for most of the CLI surface.
 
 DoorDash’s consumer web app is not scraping hidden HTML; it is making first-party JSON requests against a mix of:
 

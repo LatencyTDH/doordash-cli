@@ -138,6 +138,7 @@ That opens Chromium, lets you sign in manually, then saves the browser state for
 - add-to-cart for quick-add items
 - add-to-cart for configurable items **when explicit `--options-json` selections are provided and all selected options are validated against item/menu data**
 - add-to-cart for standalone recommended add-ons that open a nested cursor-driven child step **when the child selections are supplied via `children` in `--options-json` and the group is a proven `recommended_option_*` standalone transport**
+- automatic stale-cart protection when switching restaurants: if the active cart belongs to a different store, `add-to-cart` clears the old `cartId` instead of trying to reuse it
 - update-cart by cart item id
 - direct address persistence for both:
   - saved addresses already present in the account's DoorDash address book
