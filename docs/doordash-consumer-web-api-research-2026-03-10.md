@@ -519,7 +519,7 @@ If we need to validate this against a **real logged-in personal DoorDash session
 
 1. Open a normal Chrome tab at `https://www.doordash.com/` and sign in.
 2. Open a store page or your cart page.
-3. Click the OpenClaw Browser Relay extension button on that tab so the badge shows **ON**.
+3. Click the browser relay extension button on that tab so the badge shows **ON**.
 4. Do **one** cart-safe action only: refresh the tab, or open the cart panel.
 
 That is enough to capture the logged-in `consumer` / `listCarts` / cart headers and verify whether the same direct API path works for a personal account, without touching checkout or payment.
