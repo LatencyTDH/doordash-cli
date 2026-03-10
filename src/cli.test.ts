@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { SAFE_COMMANDS, assertAllowedFlags, assertSafeCommand } from "./lib.js";
+import { parseArgv } from "./cli.js";
 
 const cliPath = join(dirname(fileURLToPath(import.meta.url)), "cli.js");
 
@@ -34,6 +35,16 @@ test("dangerous commands are rejected", () => {
 
 test("unsupported flags are rejected before automation runs", () => {
   assert.throws(() => assertAllowedFlags("cart", { payment: "visa" }), /Unsupported flag\(s\) for cart/);
+});
+
+test("argument parsing supports inline and spaced flags", () => {
+  assert.deepEqual(parseArgv(["search", "--query=sushi", "--cuisine", "japanese"]), {
+    command: "search",
+    flags: {
+      query: "sushi",
+      cuisine: "japanese",
+    },
+  });
 });
 
 test("help output shows the cart-safe command surface", () => {

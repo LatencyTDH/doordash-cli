@@ -62,6 +62,8 @@ dd-cart --help
 doordash-cart --help
 ```
 
+`dd-cart` is used instead of bare `dd` so the package does not stomp on the standard Unix `dd` utility.
+
 Examples:
 
 ```bash

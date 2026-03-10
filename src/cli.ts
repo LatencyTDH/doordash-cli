@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { SAFE_COMMANDS, assertSafeCommand, runCommand, shutdown } from "./lib.js";
 
 export function usage(): string {
@@ -92,9 +94,20 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(async (error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  console.error(`\n${usage()}`);
-  await shutdown().catch(() => {});
-  process.exitCode = 1;
-});
+function isDirectExecution(): boolean {
+  const invokedPath = process.argv[1];
+  if (!invokedPath) {
+    return false;
+  }
+
+  return resolve(invokedPath) === resolve(fileURLToPath(import.meta.url));
+}
+
+if (isDirectExecution()) {
+  void main().catch(async (error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    console.error(`\n${usage()}`);
+    await shutdown().catch(() => {});
+    process.exitCode = 1;
+  });
+}
