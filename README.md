@@ -15,42 +15,51 @@ It stops before checkout.
 
 ## Install
 
-Install from a checkout:
+### Global install
+
+```bash
+npm install -g doordash-cli
+```
+
+When the npm package is available, that installs both lowercase command names: `doordash-cli` and `dd-cli`.
+
+### Source checkout
+
+Until then:
 
 ```bash
 git clone https://github.com/seans-openclawbot/doordash-cli.git
 cd doordash-cli
 npm install
+npm link
+```
+
+If you prefer to run from a checkout without linking:
+
+```bash
 npm run cli -- --help
 ```
 
-Optional local link:
-
-```bash
-npm link
-dd-cli --help
-```
+### Browser prerequisite
 
 If Playwright needs Chromium for `auth-bootstrap` or session recovery:
 
 ```bash
+doordash-cli install-browser
+# or, from a checkout without linking
 npm run install:browser
-# or, after linking
-dd-cli install-browser
 ```
-
-Installed command names are lowercase only: `dd-cli` and `doordash-cli`.
 
 ## First run
 
 ```bash
-dd-cli auth-bootstrap
-dd-cli auth-check
-dd-cli set-address --address "350 5th Ave, New York, NY 10118"
-dd-cli search --query sushi
+doordash-cli auth-bootstrap
+doordash-cli auth-check
+doordash-cli set-address --address "350 5th Ave, New York, NY 10118"
+doordash-cli search --query sushi
 ```
 
-If you are running from a checkout without `npm link`, replace `dd-cli` with `npm run cli --`.
+If you are running from a checkout without `npm link`, replace `doordash-cli` with `npm run cli --`.
 
 `auth-check` and other direct commands can import a compatible signed-in OpenClaw managed-browser session when one is available.
 
