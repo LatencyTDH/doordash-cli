@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { SAFE_COMMANDS, assertAllowedFlags, assertSafeCommand } from "./lib.js";
-import { parseArgv } from "./cli.js";
+import { parseArgv, version } from "./cli.js";
 
 const distDir = dirname(fileURLToPath(import.meta.url));
 const binPath = join(distDir, "bin.js");
@@ -34,8 +34,9 @@ async function runLinkedCli(linkName: string, args: string[]) {
   }
 }
 
-test("safe command allowlist stays cart-safe while adding direct API helpers", () => {
+test("safe command allowlist stays cart-safe while adding install helpers", () => {
   assert.deepEqual(SAFE_COMMANDS, [
+    "install-browser",
     "auth-check",
     "auth-bootstrap",
     "auth-clear",
@@ -64,12 +65,21 @@ test("unsupported flags are rejected before network work runs", () => {
   assert.throws(() => assertAllowedFlags("orders", { cuisine: "japanese" }), /Unsupported flag\(s\) for orders/);
 });
 
-test("argument parsing supports inline and spaced flags", () => {
-  assert.deepEqual(parseArgv(["search", "--query=sushi", "--cuisine", "japanese"]), {
+test("argument parsing supports inline, spaced, and meta flags", () => {
+  assert.deepEqual(parseArgv(["search", "--query=sushi", "--cuisine", "japanese", "--version"]), {
     command: "search",
     flags: {
       query: "sushi",
       cuisine: "japanese",
+      version: "true",
+    },
+  });
+
+  assert.deepEqual(parseArgv(["-h", "-v"]), {
+    command: undefined,
+    flags: {
+      help: "true",
+      version: "true",
     },
   });
 
@@ -100,14 +110,17 @@ test("argument parsing normalizes common Unicode dash flags", () => {
 test("help output shows the direct read-only/cart-safe command surface", () => {
   const result = runCli(["--help"]);
   assert.equal(result.status, 0);
+  assert.match(result.stdout, new RegExp(`doordash-cli v${version().replace(".", "\\.")}`));
   assert.match(result.stdout, /Usage:/);
   assert.match(result.stdout, /dd-cli <command>/);
   assert.match(result.stdout, /doordash-cli <command>/);
+  assert.match(result.stdout, /install-browser/);
   assert.match(result.stdout, /auth-bootstrap/);
   assert.match(result.stdout, /set-address --address/);
   assert.match(result.stdout, /orders \[--limit 20\] \[--active-only\]/);
   assert.match(result.stdout, /order --order-id/);
   assert.match(result.stdout, /options-json/);
+  assert.match(result.stdout, /--version, -v/);
   assert.match(result.stdout, /man dd-cli/);
   assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
   assert.doesNotMatch(result.stdout, /Dd-cli/);
@@ -117,7 +130,7 @@ test("repository ships man pages for the supported lowercase command names", () 
   const ddManPath = join(distDir, "..", "man", "dd-cli.1");
   const aliasManPath = join(distDir, "..", "man", "doordash-cli.1");
 
-  assert.match(readFileSync(ddManPath, "utf8"), /\.TH DD-CLI 1/);
+  assert.match(readFileSync(ddManPath, "utf8"), /install-browser/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /Dd-cli/);
   assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
 });
@@ -140,6 +153,12 @@ test("symlinked entrypoints print help for supported lowercase command names", a
     assert.match(result.stdout, /Usage:/, `${commandName} should print usage`);
     assert.match(result.stdout, /dd-cli <command>/, `${commandName} should print command help`);
   }
+});
+
+test("version flag prints the package version", () => {
+  const result = runCli(["--version"]);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.trim(), version());
 });
 
 test("blocked commands fail immediately", () => {

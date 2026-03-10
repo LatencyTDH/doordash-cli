@@ -1,4 +1,7 @@
 import { cleanup as browserCleanup } from "@striderlabs/mcp-doordash/dist/browser.js";
+import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
 import {
   addToCartDirect,
   bootstrapAuthSession,
@@ -27,7 +30,11 @@ import {
   type UpdateCartResult,
 } from "./direct-api.js";
 
+const require = createRequire(import.meta.url);
+const PLAYWRIGHT_CLI_PATH = join(dirname(require.resolve("playwright/package.json")), "cli.js");
+
 export const SAFE_COMMANDS = [
+  "install-browser",
   "auth-check",
   "auth-bootstrap",
   "auth-clear",
@@ -56,6 +63,7 @@ export type SafeCommand = (typeof SAFE_COMMANDS)[number];
 export type CommandFlags = Record<string, string>;
 
 const COMMAND_FLAGS = {
+  "install-browser": [],
   "auth-check": [],
   "auth-bootstrap": [],
   "auth-clear": [],
@@ -71,6 +79,7 @@ const COMMAND_FLAGS = {
 } as const satisfies Record<SafeCommand, readonly string[]>;
 
 export type CommandResult =
+  | { success: true; message: string; browser: "chromium" }
   | AuthResult
   | AuthBootstrapResult
   | { success: true; message: string; cookiesPath: string; storageStatePath: string }
@@ -123,6 +132,9 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
   assertAllowedFlags(command, args);
 
   switch (command) {
+    case "install-browser":
+      return installBrowser();
+
     case "auth-check":
       return checkAuthDirect();
 
@@ -222,6 +234,30 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
 export async function shutdown(): Promise<void> {
   await cleanupDirect().catch(() => {});
   await browserCleanup().catch(() => {});
+}
+
+async function installBrowser(): Promise<{ success: true; message: string; browser: "chromium" }> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, [PLAYWRIGHT_CLI_PATH, "install", "chromium"], {
+      stdio: "inherit",
+    });
+
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`Playwright browser install failed (code=${code ?? "null"}, signal=${signal ?? "none"})`));
+    });
+  });
+
+  return {
+    success: true,
+    browser: "chromium",
+    message: "Chromium is installed for doordash-cli.",
+  };
 }
 
 function requiredArg(args: CommandFlags, key: string): string {

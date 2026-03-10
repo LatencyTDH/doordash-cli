@@ -1,10 +1,24 @@
 # doordash-cli examples
 
-All examples use the preferred lowercase command name `dd-cli`. `doordash-cli` is an equivalent alias.
+Use the preferred lowercase command name `dd-cli`. `doordash-cli` is an equivalent alias.
+
+If you are running from a local checkout without linking, prefix commands with:
+
+```bash
+npm run cli --
+```
+
+For installation and first-run setup, see [install.md](install.md).
 
 All commands print JSON.
 
 ## Session setup
+
+Install the matching Chromium build once if you do not already have it:
+
+```bash
+dd-cli install-browser
+```
 
 Check whether you already have reusable session state:
 

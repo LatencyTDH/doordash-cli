@@ -4,7 +4,7 @@
 
 `doordash-cli` is a focused CLI for the parts of DoorDash that work well in a shell: sign in once, set a delivery address, search restaurants, inspect menus and items, inspect existing orders, and manage a cart with clean JSON output.
 
-It stops before checkout.
+It intentionally stops before checkout.
 
 - no payment actions
 - no checkout or order placement
@@ -14,87 +14,102 @@ The goal is a trustworthy terminal workflow for browsing, checking order status,
 
 ## Why this exists
 
-- **Cart-safe by design** — browse, read existing orders, and manage a cart; nothing beyond that.
+- **Cart-safe by design** — browse, inspect existing orders, and manage a cart; nothing beyond that.
 - **Direct API first** — core commands use DoorDash consumer-web GraphQL/HTTP where possible, not brittle DOM clicking.
 - **JSON-friendly** — every command is scriptable.
 - **Fail-closed** — if a request cannot be validated safely, the CLI refuses instead of guessing.
-- **Real CLI ergonomics** — short command name, help text, and man pages included.
+- **Better first-run UX** — source installs work immediately after `npm install`, and the package is laid out for eventual global npm installs.
 
 ## Install
 
-Today the project is meant to run from a local clone.
+### From source today
 
 ```bash
+git clone https://github.com/seans-openclawbot/doordash-cli.git
+cd doordash-cli
 npm install
-npm run build
+npm run cli -- --version
+npm run cli -- --help
+```
+
+What changed:
+
+- `npm install` now builds automatically via `prepare`
+- `npm run cli -- ...` gives you a no-link first-run path
+- packaging metadata, docs, license, and man pages are included for npm readiness
+
+Optional shell-wide link during local development:
+
+```bash
 npm link
+dd-cli --help
 npm run install:man
 ```
 
-Command names:
+### Global npm install
+
+The package is prepared for:
+
+```bash
+npm install -g doordash-cli
+doordash-cli --version
+doordash-cli --help
+```
+
+The first public publish still requires maintainer npm auth, but the repo and tarball layout are now set up for that path.
+
+### Browser prerequisite
+
+If `auth-bootstrap` or session recovery needs Chromium, install the matching Playwright browser once:
+
+```bash
+# local checkout
+npm run install:browser
+
+# globally installed package
+doordash-cli install-browser
+```
+
+### Command names
 
 - `dd-cli` — preferred
-- `doordash-cli`
+- `doordash-cli` — equivalent alias
 
-If `auth-bootstrap` needs a browser binary, install Chromium once:
+If you are running from a local checkout without linking, replace `dd-cli` in the examples below with `npm run cli --`.
 
-```bash
-npx playwright install chromium
-```
-
-Verify the install:
+## First run
 
 ```bash
-dd-cli --help
-man dd-cli
-man doordash-cli
-```
+# Install Chromium once if needed
+dd-cli install-browser
 
-## Quick start
-
-```bash
-# Reuse an existing session if possible
-# (can also import a compatible signed-in browser session)
-dd-cli auth-check
-
-# If needed, sign in once and save reusable state
+# Sign in once and save reusable state
 dd-cli auth-bootstrap
 
-# Set the active delivery address
+# Confirm the saved session works
+dd-cli auth-check
+
+# Set a delivery address
 dd-cli set-address --address "350 5th Ave, New York, NY 10118"
 
-# Browse restaurants and menus
+# Start browsing
 dd-cli search --query sushi
-dd-cli menu --restaurant-id 1721744
-dd-cli item --restaurant-id 1721744 --item-id 546936015
-
-# Inspect existing orders
-dd-cli orders --limit 5
-dd-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678
-
-# Build and inspect a cart
-dd-cli add-to-cart --restaurant-id 1721744 --item-id 876658890 --quantity 2
-dd-cli cart
 ```
 
 All commands print JSON.
 
-## More examples
+## More docs
 
-The README keeps the quick-start path tight. For fuller workflows, see [docs/examples.md](docs/examples.md).
-
-That examples guide covers:
-
-- session bootstrap and reset
-- search, menu, and item inspection
-- read-only order workflows, including `orders`, `orders --active-only`, and `order --order-id ...`
-- cart workflows, including `add-to-cart`, `update-cart`, and `cart`
-- configurable items with `--options-json`, including supported nested recommended add-ons
+- [Install guide](docs/install.md)
+- [Examples](docs/examples.md)
+- `man dd-cli`
+- `man doordash-cli`
 
 ## Command guide
 
 ### Session
 
+- `install-browser` — install the matching Playwright Chromium build used by this package
 - `auth-check` — verify saved session state and optionally import a compatible signed-in browser session
 - `auth-bootstrap` — launch Chromium for a one-time manual sign-in flow and save reusable state
 - `auth-clear` — delete saved session state
@@ -144,7 +159,7 @@ Validate the project with:
 ```bash
 npm run validate
 npm pack --dry-run
-node dist/bin.js --help
+npm run smoke:pack
 ```
 
 ## Caveats

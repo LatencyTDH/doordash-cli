@@ -1,18 +1,32 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const UNICODE_DASH_PREFIX = /^[\u2012\u2013\u2014\u2015\u2212]+/u;
 const FLAG_BODY = /^[A-Za-z0-9][A-Za-z0-9-]*(=.*)?$/;
 
+const PACKAGE_JSON_PATH = new URL("../package.json", import.meta.url);
+const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf8")).version as string;
+
+export function version(): string {
+  return PACKAGE_VERSION;
+}
+
 export function usage(): string {
   return [
+    `doordash-cli v${version()}`,
+    "",
     "Usage:",
     "  dd-cli <command> [flags]",
     "  doordash-cli <command> [flags]",
     "",
+    "Meta:",
+    "  --help, -h",
+    "  --version, -v",
+    "",
     "Safe commands:",
+    "  install-browser",
     "  auth-check",
     "  auth-bootstrap",
     "  auth-clear",
@@ -28,9 +42,9 @@ export function usage(): string {
     "",
     "Notes:",
     "  - Run with no arguments to show this help.",
-    "  - -h / --help are supported.",
     "  - Common Unicode long dashes are normalized for flags, so —help / –help work too.",
     "  - Installed command names are lowercase only: dd-cli and doordash-cli.",
+    "  - install-browser downloads the matching Playwright Chromium build used by this package.",
     "  - Manual pages ship with the project: man dd-cli or man doordash-cli.",
     "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, orders, order, cart, add-to-cart, and update-cart.",
     "  - auth-check can import an already-signed-in compatible managed-browser DoorDash session when one is available.",
@@ -40,17 +54,17 @@ export function usage(): string {
     "  - other non-recommended nested cursor trees still fail closed until DoorDash exposes a directly provable transport.",
     "",
     "Out-of-scope commands remain intentionally unsupported:",
-    "  checkout, place-order, payment actions, order mutation/cancellation", 
+    "  checkout, place-order, payment actions, order mutation/cancellation",
     "",
     "Examples:",
     "  dd-cli --help",
-    "  dd-cli",
+    "  dd-cli install-browser",
     "  dd-cli search --query sushi",
     "  dd-cli orders --active-only",
     "  doordash-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678",
     "  doordash-cli auth-check",
     "",
-    "Allowed commands: auth-check, auth-bootstrap, auth-clear, set-address, search, menu, item, orders, order, add-to-cart, update-cart, cart",
+    "Allowed commands: install-browser, auth-check, auth-bootstrap, auth-clear, set-address, search, menu, item, orders, order, add-to-cart, update-cart, cart",
   ].join("\n");
 }
 
@@ -94,6 +108,11 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
       continue;
     }
 
+    if (token === "-v" || token === "--version") {
+      flags.version = "true";
+      continue;
+    }
+
     if (!token.startsWith("--")) {
       throw new Error(`Unexpected positional argument: ${rawToken}`);
     }
@@ -128,6 +147,11 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const { command, flags } = parseArgv(argv);
+
+  if (flags.version === "true") {
+    console.log(version());
+    return;
+  }
 
   if (!command || command === "help" || flags.help === "true") {
     console.log(usage());
