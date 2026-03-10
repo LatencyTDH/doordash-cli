@@ -27,7 +27,7 @@ npm run cli -- --help
 
 ## Browser prerequisite
 
-Install the matching Playwright Chromium build if `auth-bootstrap` or session recovery needs it.
+Install the matching Playwright Chromium build if you plan to use `auth-bootstrap`.
 
 ### Global or linked install
 
@@ -52,17 +52,11 @@ doordash-cli search --query sushi
 
 If you are running from a checkout without `npm link`, replace `doordash-cli` with `npm run cli --`.
 
-## Session import behavior
+## Session reuse
 
-Before launching a new local browser context, direct commands try to import a compatible signed-in DoorDash session from an already-running OpenClaw managed browser.
+If you already have a compatible signed-in DoorDash browser session available, direct commands may reuse it instead of opening a fresh browser context.
 
-Probe order:
-
-- `DOORDASH_MANAGED_BROWSER_CDP_URL`
-- `OPENCLAW_BROWSER_CDP_URL`
-- `OPENCLAW_OPENCLAW_CDP_URL`
-- OpenClaw config hints from `~/.openclaw/openclaw.json`
-- fallback default `http://127.0.0.1:18800`
+If not, run `doordash-cli auth-bootstrap` once to save reusable state for later commands.
 
 ## Maintainer verification
 

@@ -42,7 +42,7 @@ npm run cli -- --help
 
 ### Browser prerequisite
 
-If Playwright needs Chromium for `auth-bootstrap` or session recovery:
+If Playwright needs Chromium for `auth-bootstrap`:
 
 ```bash
 doordash-cli install-browser
@@ -61,7 +61,7 @@ doordash-cli search --query sushi
 
 If you are running from a checkout without `npm link`, replace `doordash-cli` with `npm run cli --`.
 
-`auth-check` and other direct commands can import a compatible signed-in OpenClaw managed-browser session when one is available.
+If you already have a compatible signed-in DoorDash browser session available, `auth-check` may reuse it instead of asking you to sign in again.
 
 ## Command surface
 
