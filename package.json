@@ -1,0 +1,27 @@
+{
+  "name": "doordash-cart-cli",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "private": "true",
+  "bin": {
+    "dd": "dist/cli.js"
+  },
+  "dependencies": {
+    "@striderlabs/mcp-doordash": "^0.1.2",
+    "playwright": "^1.41.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  }
+}
