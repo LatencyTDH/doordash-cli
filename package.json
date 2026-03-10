@@ -16,6 +16,7 @@
   "files": [
     "dist",
     "man",
+    "docs/examples.md",
     "scripts/install-manpage.sh",
     "README.md",
     "LICENSE"

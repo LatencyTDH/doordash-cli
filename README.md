@@ -69,8 +69,7 @@ dd-cli menu --restaurant-id 1721744
 dd-cli item --restaurant-id 1721744 --item-id 546936015
 
 # Inspect existing orders
-dd-cli orders
-dd-cli orders --active-only
+dd-cli orders --limit 5
 dd-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678
 
 # Build and inspect a cart
@@ -79,6 +78,18 @@ dd-cli cart
 ```
 
 All commands print JSON.
+
+## More examples
+
+The README keeps the quick-start path tight. For fuller workflows, see [docs/examples.md](docs/examples.md).
+
+That examples guide covers:
+
+- session bootstrap and reset
+- search, menu, and item inspection
+- read-only order workflows, including `orders`, `orders --active-only`, and `order --order-id ...`
+- cart workflows, including `add-to-cart`, `update-cart`, and `cart`
+- configurable items with `--options-json`, including supported nested recommended add-ons
 
 ## Command guide
 
@@ -106,64 +117,7 @@ All commands print JSON.
 - `update-cart --cart-item-id <id> --quantity <n>` — change quantity; use `0` to remove
 - `cart` — show the current cart
 
-## More examples
-
-```bash
-# Filter search results
-dd-cli search --query tacos --cuisine mexican
-
-# Limit order history output
-dd-cli orders --limit 5
-
-# Add by visible item name
-dd-cli add-to-cart --restaurant-id 1721744 --item-name "Spicy Tuna Roll"
-
-# Remove a cart item
-dd-cli update-cart --cart-item-id 3b231d03-5a72-4636-8d12-c8769d706d45 --quantity 0
-
-# Reset saved auth state
-dd-cli auth-clear
-```
-
-## Configurable items
-
-For items with required option groups, pass `--options-json` with explicit selections:
-
-```bash
-dd-cli add-to-cart \
-  --restaurant-id 1721744 \
-  --item-id 546936015 \
-  --options-json '[
-    {"groupId":"703393388","optionId":"4716032529"},
-    {"groupId":"703393389","optionId":"4716042466"}
-  ]'
-```
-
-Some supported nested add-ons can include recursive `children` selections:
-
-```bash
-dd-cli add-to-cart \
-  --restaurant-id 1721744 \
-  --item-id 546936015 \
-  --options-json '[
-    {"groupId":"703393388","optionId":"4716032529"},
-    {"groupId":"703393389","optionId":"4716042466"},
-    {
-      "groupId":"recommended_option_546935995",
-      "optionId":"546936011",
-      "children":[
-        {"groupId":"780057412","optionId":"4702669757"}
-      ]
-    }
-  ]'
-```
-
-Guardrails:
-
-- unknown group IDs or option IDs are rejected
-- required min/max selection counts are enforced
-- duplicate nested selections are rejected
-- unsupported nested transport shapes fail closed
+For configurable items, pass validated `--options-json` selections. See [docs/examples.md#configurable-items](docs/examples.md#configurable-items) for working examples, including supported nested add-ons.
 
 ## Safety
 
@@ -191,7 +145,6 @@ Validate the project with:
 npm run validate
 npm pack --dry-run
 node dist/bin.js --help
-node dist/bin.js orders --help
 ```
 
 ## Caveats
