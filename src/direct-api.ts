@@ -1313,11 +1313,13 @@ export async function addToCartDirect(params: {
 }): Promise<AddToCartResult> {
   const { item, itemDetail } = await resolveMenuItem(params.restaurantId, params.itemId, params.itemName);
   const currentCart = await getCartDirect();
+  const currentCartStoreId = currentCart.restaurant?.id ?? null;
+  const cartId = currentCartStoreId && currentCartStoreId !== params.restaurantId ? "" : (currentCart.cartId ?? "");
   const auth = await checkAuthDirect();
 
   const payload = await buildAddToCartPayload({
     restaurantId: params.restaurantId,
-    cartId: currentCart.cartId ?? "",
+    cartId,
     quantity: params.quantity,
     specialInstructions: params.specialInstructions ?? null,
     optionSelections: params.optionSelections ?? [],
