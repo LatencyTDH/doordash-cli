@@ -54,6 +54,33 @@ The repo uses Release Please with a **manual release cadence**.
 
 That makes GitHub Releases the canonical release record immediately, even before npm publication is enabled, without firing release automation on every normal merge to `main`.
 
+## Install docs vs release notes
+
+Install and first-run instructions should live in the docs, not in GitHub Release bodies.
+
+Canonical install guidance lives in:
+
+- `README.md` for the quick path
+- `docs/install.md` for the full install, browser setup, and first-run flow
+
+GitHub Releases should only carry a short install-or-upgrade box plus release-specific changes. Do **not** paste the full install walkthrough into release notes.
+
+Once npm publication is enabled, the npm package page should mirror the same canonical install guidance rather than inventing a separate flow.
+
+### Release note template
+
+Use a short block like this when you need explicit install guidance in a release:
+
+```md
+## Install / upgrade
+
+- Preferred global install (once npm publishing is live): `npm install -g doordash-cli`
+- Current source-checkout upgrade: `git pull && npm install && npm link`
+- Full install, browser setup, and first run: <https://github.com/seans-openclawbot/doordash-cli/blob/main/README.md> and <https://github.com/seans-openclawbot/doordash-cli/blob/main/docs/install.md>
+```
+
+After that box, keep the rest of the release body focused on what changed in that specific release.
+
 ## Changelog and release notes
 
 `CHANGELOG.md` is the source-controlled changelog. Release Please maintains it from the merged commit history on `main`.
@@ -63,6 +90,7 @@ To keep release notes clean:
 - prefer `feat:` and `fix:` for user-visible work
 - keep docs/chore/test-only PRs out of the changelog when they are not user-relevant
 - write PR titles the way you want them to read in release notes
+- keep release notes focused on the release itself, not evergreen install docs
 
 If a release PR needs small editorial cleanup, edit the release PR before merging rather than rewriting tags later.
 
@@ -91,6 +119,7 @@ Before merging a release PR:
 - confirm the proposed version bump makes sense
 - skim `CHANGELOG.md` for tone and accuracy
 - confirm the repo is still in a releasable state
+- make sure any install/upgrade callout stays short and links back to `README.md` / `docs/install.md`
 
 After the release PR merges:
 
