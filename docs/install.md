@@ -1,99 +1,57 @@
-# Install and first-run guide
+# Install and first run
 
-## Recommended paths
-
-## 1) From a local checkout
-
-Use this today if you are working from source before the first public npm publish.
+## Source checkout
 
 ```bash
 git clone https://github.com/seans-openclawbot/doordash-cli.git
 cd doordash-cli
 npm install
-npm run cli -- --version
 npm run cli -- --help
 ```
 
-What changed for install UX:
+From a checkout, run commands with `npm run cli -- ...` unless you link the package locally.
 
-- `npm install` now runs the build automatically via `prepare`
-- you no longer need a separate `npm run build` before the CLI is usable
-- `npm run cli -- ...` gives you a no-link first-run path
-
-Optional shell-wide link during local development:
+## Optional local link
 
 ```bash
 npm link
-doordash-cli --help
+dd-cli --help
 ```
 
-## 2) Global npm install
-
-The package is prepared for global installation as soon as a maintainer publishes the first release:
-
-```bash
-npm install -g doordash-cli
-doordash-cli --version
-doordash-cli --help
-```
-
-Current blocker for a live public install: a maintainer must be logged in to npm on the release machine and publish the first version.
+Linked or packaged installs expose the lowercase command names `dd-cli` and `doordash-cli`.
 
 ## Browser prerequisite
 
-This project depends on Playwright's Chromium browser for session bootstrap and some recovery flows.
+Install the matching Playwright Chromium build if `auth-bootstrap` or session recovery needs it.
 
-If Chromium is not installed yet:
-
-### Local checkout
+### From a checkout
 
 ```bash
 npm run install:browser
 ```
 
-### Global install
+### After linking or package install
 
 ```bash
-doordash-cli install-browser
+dd-cli install-browser
 ```
 
-## First successful command
+## First run
 
-If you installed from source, replace `doordash-cli` with `npm run cli --`.
-
-### Install Chromium if needed
+From a checkout:
 
 ```bash
-doordash-cli install-browser
+npm run cli -- auth-bootstrap
+npm run cli -- auth-check
+npm run cli -- set-address --address "350 5th Ave, New York, NY 10118"
+npm run cli -- search --query sushi
 ```
 
-This uses the Playwright CLI bundled with the package, so the downloaded browser revision matches the installed `doordash-cli` version.
-
-### Bootstrap a reusable session
-
-```bash
-doordash-cli auth-bootstrap
-```
-
-That opens Chromium and lets you sign in manually. The CLI then stores reusable session state under `~/.config/striderlabs-mcp-doordash/`.
-
-### Verify the saved session
-
-```bash
-doordash-cli auth-check
-```
-
-Expected result: JSON confirming whether DoorDash considers the saved session logged in, and often the default address if DoorDash returns one.
-
-### Quick browse smoke test
-
-```bash
-doordash-cli search --query sushi
-```
+After `npm link` or package install, replace `npm run cli --` with `dd-cli`.
 
 ## Session import behavior
 
-Before starting a new local browser context, direct commands try to import a signed-in DoorDash session from an already-running OpenClaw managed browser.
+Before launching a new local browser context, direct commands try to import a compatible signed-in DoorDash session from an already-running OpenClaw managed browser.
 
 Probe order:
 
@@ -103,17 +61,12 @@ Probe order:
 - OpenClaw config hints from `~/.openclaw/openclaw.json`
 - fallback default `http://127.0.0.1:18800`
 
-## Verification commands for maintainers
+## Maintainer verification
+
+Use these when changing install or packaging behavior:
 
 ```bash
 npm run validate
 npm pack --dry-run
 npm run smoke:pack
 ```
-
-What they cover:
-
-- TypeScript + tests
-- npm package contents
-- real tarball install into a clean temporary prefix
-- post-pack CLI verification with `doordash-cli --version` and `doordash-cli --help`
