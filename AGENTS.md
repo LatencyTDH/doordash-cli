@@ -4,7 +4,7 @@ Repo-local guidance for coding agents working on `doordash-cli`.
 
 ## Default working style
 
-- Use **gpt-5.4** by default for this repo unless the user explicitly asks for another model.
+- Contributors may use their preferred tools/models; optimize for repo-quality outcomes, not tool-specific rituals.
 - Treat this as a serious open-source CLI, not a scratch repo. Favor cohesive UX, tight docs, and scoped changes.
 - Prefer the repo's direct API architecture for core behavior; browser automation is bootstrap/recovery glue, not the product.
 
