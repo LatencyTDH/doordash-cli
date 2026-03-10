@@ -8,6 +8,8 @@ import {
   getCartDirect,
   getItemDirect,
   getMenuDirect,
+  getOrderDirect,
+  getOrdersDirect,
   parseOptionSelectionsJson,
   searchRestaurantsDirect,
   setAddressDirect,
@@ -18,6 +20,8 @@ import {
   type CartResult,
   type ItemResult,
   type MenuResult,
+  type OrderResult,
+  type OrdersResult,
   type SearchResult,
   type SetAddressResult,
   type UpdateCartResult,
@@ -31,6 +35,8 @@ export const SAFE_COMMANDS = [
   "search",
   "menu",
   "item",
+  "orders",
+  "order",
   "add-to-cart",
   "update-cart",
   "cart",
@@ -57,6 +63,8 @@ const COMMAND_FLAGS = {
   search: ["query", "cuisine"],
   menu: ["restaurant-id"],
   item: ["restaurant-id", "item-id"],
+  orders: ["limit", "active-only"],
+  order: ["order-id"],
   "add-to-cart": ["restaurant-id", "item-id", "item-name", "quantity", "special-instructions", "options-json"],
   "update-cart": ["cart-item-id", "quantity"],
   cart: [],
@@ -70,6 +78,8 @@ export type CommandResult =
   | SearchResult
   | MenuResult
   | ItemResult
+  | OrdersResult
+  | OrderResult
   | AddToCartResult
   | UpdateCartResult
   | CartResult;
@@ -88,8 +98,9 @@ export function assertSafeCommand(value: string): asserts value is SafeCommand {
   }
 
   if (isBlockedCommand(value)) {
+    const guidance = value === "track-order" ? " Use `orders` or `order --order-id ...` for read-only existing-order status instead." : "";
     throw new Error(
-      `Blocked command: ${value}. This CLI is cart-safe only and will not expose checkout, order placement, tracking, or payment actions.`,
+      `Blocked command: ${value}. This CLI is read-only for browse, cart, and existing-order inspection only; checkout, order placement, and payment actions stay out of scope.${guidance}`,
     );
   }
 
@@ -141,6 +152,24 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
       const restaurantId = requiredArg(args, "restaurant-id");
       const itemId = requiredArg(args, "item-id");
       return getItemDirect(restaurantId, itemId);
+    }
+
+    case "orders": {
+      const limitRaw = optionalArg(args, "limit");
+      const limit = limitRaw === undefined ? undefined : Number.parseInt(limitRaw, 10);
+      if (limitRaw !== undefined && (!Number.isInteger(limit) || (limit ?? 0) < 1)) {
+        throw new Error(`Invalid --limit: ${limitRaw}`);
+      }
+
+      return getOrdersDirect({
+        limit,
+        activeOnly: parseBooleanFlag(optionalArg(args, "active-only"), "active-only") ?? false,
+      });
+    }
+
+    case "order": {
+      const orderId = requiredArg(args, "order-id");
+      return getOrderDirect(orderId);
     }
 
     case "add-to-cart": {
@@ -206,4 +235,21 @@ function requiredArg(args: CommandFlags, key: string): string {
 function optionalArg(args: CommandFlags, key: string): string | undefined {
   const value = args[key];
   return value && value.length > 0 ? value : undefined;
+}
+
+function parseBooleanFlag(value: string | undefined, key: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  throw new Error(`Invalid --${key}: ${value}. Expected true or false.`);
 }

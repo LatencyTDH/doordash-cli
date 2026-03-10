@@ -1,6 +1,6 @@
 .TH DD-CLI 1 "2026-03-10" "doordash-cli 0.1.0" "User Commands"
 .SH NAME
-dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, address setup, and cart management
+dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, read-only order inspection, and cart management
 .SH SYNOPSIS
 .B dd-cli
 [\fICOMMAND\fR] [\fIOPTIONS\fR]
@@ -11,12 +11,13 @@ dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, address 
 .B dd-cli
 is a focused DoorDash command line interface for the parts of the workflow that
 fit well in a terminal: signing in, setting delivery context, searching stores,
-inspecting menus and items, and managing the cart.
+inspecting menus and items, inspecting existing orders, and managing the cart.
 .PP
 The command surface is intentionally small. The CLI does not expose checkout,
-order placement, payment actions, or order tracking. If a payload cannot be
-validated safely from known DoorDash consumer-web request shapes, the tool fails
-closed instead of guessing.
+order placement, payment actions, or order mutation/cancellation. Read-only
+existing-order inspection is allowed. If a payload cannot be validated safely
+from known DoorDash consumer-web request shapes, the tool fails closed instead
+of guessing.
 .PP
 If invoked with no command, or with
 .BR -h / --help ,
@@ -53,6 +54,17 @@ Fetch a restaurant menu.
 .TP
 .BI "item --restaurant-id " ID " --item-id " ITEM_ID
 Fetch detailed information for a single item.
+.TP
+.BI "orders [--limit " N "] [--active-only]"
+List existing orders with current status, totals, timestamps, and item
+summaries.
+.TP
+.BI "order --order-id " ID
+Inspect one existing order in more detail. The identifier may be the CLI's
+returned internal order ID,
+.BR orderUuid ,
+or
+.BR deliveryUuid .
 .TP
 .BI "add-to-cart --restaurant-id " ID " (--item-id " ITEM_ID " | --item-name " NAME ") [--quantity " N "] [--special-instructions " TEXT "] [--options-json " JSON "]"
 Add an item to the active cart. Configurable items require explicit option
@@ -95,6 +107,19 @@ DoorDash item identifier.
 .BI --item-name " NAME"
 Fallback item lookup by visible item name when an item ID is not convenient.
 .TP
+.BI --order-id " ID"
+Existing-order identifier accepted by
+.BR order .
+.TP
+.BI --limit " N"
+Maximum number of existing orders to return for
+.BR orders .
+.TP
+.B --active-only
+Filter
+.B orders
+output to active / still-tracking orders only.
+.TP
 .BI --quantity " N"
 Positive integer quantity for add/update operations.
 .TP
@@ -133,11 +158,12 @@ dd-cli set-address --address "350 5th Ave, New York, NY 10118"
 dd-cli search --query sushi
 .EE
 .PP
-Inspect a menu and item:
+Inspect existing orders:
 .PP
 .EX
-dd-cli menu --restaurant-id 1721744
-dd-cli item --restaurant-id 1721744 --item-id 546936015
+dd-cli orders
+dd-cli orders --active-only
+dd-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678
 .EE
 .PP
 Add a configurable item to the cart:
@@ -172,9 +198,16 @@ Success, including help and no-argument usage output.
 .B 1
 Validation error, blocked command, unsupported flag, or runtime failure.
 .SH SAFETY
-The CLI is intentionally limited to browsing and cart management. Dangerous
-commands such as checkout, place-order, order tracking, and payment actions are
-blocked immediately.
+The CLI is intentionally limited to browsing, read-only existing-order
+inspection, and cart management. Dangerous commands such as checkout,
+place-order, payment actions, and order mutation/cancellation are blocked
+immediately. The legacy
+.B track-order
+verb remains blocked; use
+.B orders
+or
+.B order
+instead.
 .SH MAN PAGE INSTALLATION
 For cloned or linked development checkouts, install the local manual pages with:
 .PP
