@@ -100,6 +100,6 @@ After the release PR merges:
 
 The workflow uses the built-in `GITHUB_TOKEN`, so it does not require extra secrets just to cut GitHub releases.
 
-Repository Actions settings must leave default workflow permissions at **Read and write** so the workflow can open release PRs. The workflow itself is still explicitly scoped to the minimum permissions it needs (`contents`, `issues`, and `pull-requests` write), and `can_approve_pull_request_reviews` can stay disabled.
+Repository Actions settings must leave default workflow permissions at **Read and write** and must enable **Allow GitHub Actions to create and approve pull requests** so the workflow can open release PRs. GitHub exposes that as one combined toggle; the workflow itself still does not auto-approve anything, and it remains explicitly scoped to the minimum token permissions it needs (`contents`, `issues`, and `pull-requests` write).
 
 If the repo later adds CI that must run on release PRs created by automation, switch Release Please to a maintainer PAT with the appropriate repo permissions. That is not required for the current setup.
