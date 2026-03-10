@@ -1,6 +1,6 @@
 # Releasing doordash-cli
 
-`doordash-cli` uses a release flow that is meant to feel boring in the best way: merge good PRs, let automation prepare the release, review the changelog, merge the release PR, and get a tagged GitHub release with a validated package artifact.
+`doordash-cli` uses a release flow that is meant to feel boring in the best way: merge good PRs, decide when you actually want a release, review the generated release PR, merge it, and get a tagged GitHub release with a validated package artifact.
 
 ## Versioning policy
 
@@ -29,18 +29,20 @@ Rules of thumb:
 
 ## Automated release flow
 
-The repo uses Release Please on every push to `main`.
+The repo uses Release Please with a **manual release cadence**.
 
-1. Feature and fix PRs merge into `main`.
-2. Release Please opens or updates a release PR with:
+1. Feature and fix PRs merge into `main` as usual.
+2. When you actually want to cut a release, run the `release-please` workflow manually against `main`.
+   - GitHub UI: **Actions → release-please → Run workflow**
+   - CLI: `gh workflow run release-please.yml --ref main`
+3. Release Please opens or updates a release PR with:
    - the next version
    - `package.json` / `package-lock.json` version bumps
    - `CHANGELOG.md` updates
-3. A maintainer reviews the release PR like any other scoped change.
-4. Merging the release PR creates:
-   - a Git tag in `vX.Y.Z` format
-   - a GitHub Release
-5. The release workflow then:
+4. A maintainer reviews that release PR like any other scoped change.
+5. Merging the release PR back to `main` triggers the workflow again only for that release commit, which then:
+   - creates the Git tag in `vX.Y.Z` format
+   - creates the GitHub Release
    - checks out the tagged release SHA
    - runs `npm ci`
    - runs `npm run validate`
@@ -48,7 +50,7 @@ The repo uses Release Please on every push to `main`.
    - builds the npm tarball with `npm pack`
    - uploads the tarball and a SHA-256 checksum to the GitHub Release
 
-That makes GitHub Releases the canonical release record immediately, even before npm publication is enabled.
+That makes GitHub Releases the canonical release record immediately, even before npm publication is enabled, without firing release automation on every normal merge to `main`.
 
 ## Changelog and release notes
 
@@ -77,6 +79,11 @@ Until that lands, do **not** publish ad hoc from a laptop branch or unpublished 
 
 ## Maintainer checklist
 
+Before running the release workflow:
+
+- confirm `main` is in a releasable state
+- decide that this is actually the moment you want a release PR
+
 Before merging a release PR:
 
 - confirm the proposed version bump makes sense
@@ -92,5 +99,7 @@ After the release PR merges:
 ## Notes on GitHub tokens
 
 The workflow uses the built-in `GITHUB_TOKEN`, so it does not require extra secrets just to cut GitHub releases.
+
+Repository Actions settings must leave default workflow permissions at **Read and write** and must enable **Allow GitHub Actions to create and approve pull requests** so the workflow can open release PRs. GitHub exposes that as one combined toggle; the workflow itself still does not auto-approve anything, and it remains explicitly scoped to the minimum token permissions it needs (`contents`, `issues`, and `pull-requests` write).
 
 If the repo later adds CI that must run on release PRs created by automation, switch Release Please to a maintainer PAT with the appropriate repo permissions. That is not required for the current setup.

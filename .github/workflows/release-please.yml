@@ -1,21 +1,30 @@
 name: release-please
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
+    paths:
+      - CHANGELOG.md
+      - package.json
+      - package-lock.json
+      - .release-please-manifest.json
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+concurrency:
+  group: release-please-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
 
     steps:
-      - name: Prepare or publish release
+      - name: Prepare release PR or publish release
         id: release
         uses: googleapis/release-please-action@v4
         with:
