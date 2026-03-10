@@ -97,17 +97,16 @@ test("help output shows the direct cart-safe command surface", () => {
   assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /man dd-cli/);
   assert.match(result.stdout, /Dangerous commands are intentionally unsupported/);
+  assert.doesNotMatch(result.stdout, /Dd-cli/);
 });
 
-test("repository ships man pages for the primary and alias command names", () => {
+test("repository ships man pages for the supported lowercase command names", () => {
   const ddManPath = join(distDir, "..", "man", "dd-cli.1");
   const aliasManPath = join(distDir, "..", "man", "doordash-cli.1");
-  const compatibilityAliasManPath = join(distDir, "..", "man", "Dd-cli.1");
 
   assert.match(readFileSync(ddManPath, "utf8"), /\.TH DD-CLI 1/);
-  assert.match(readFileSync(ddManPath, "utf8"), /dd-cli, doordash-cli, Dd-cli/);
+  assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /Dd-cli/);
   assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
-  assert.equal(readFileSync(compatibilityAliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
 });
 
 test("-h and no-arg invocation both show usage", () => {
@@ -121,8 +120,8 @@ test("-h and no-arg invocation both show usage", () => {
   assert.match(noArgs.stdout, /Run with no arguments to show this help/);
 });
 
-test("symlinked entrypoints print help for installed command names", async () => {
-  for (const commandName of ["dd-cli", "doordash-cli", "Dd-cli"]) {
+test("symlinked entrypoints print help for supported lowercase command names", async () => {
+  for (const commandName of ["dd-cli", "doordash-cli"]) {
     const result = await runLinkedCli(commandName, ["--help"]);
     assert.equal(result.status, 0, `${commandName} should exit 0`);
     assert.match(result.stdout, /Usage:/, `${commandName} should print usage`);

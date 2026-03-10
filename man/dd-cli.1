@@ -1,14 +1,11 @@
 .TH DD-CLI 1 "2026-03-10" "doordash-cli 0.1.0" "User Commands"
 .SH NAME
-dd-cli, doordash-cli, Dd-cli \- cart-safe DoorDash CLI for browsing, address setup, and cart management
+dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, address setup, and cart management
 .SH SYNOPSIS
 .B dd-cli
 [\fICOMMAND\fR] [\fIOPTIONS\fR]
 .br
 .B doordash-cli
-[\fICOMMAND\fR] [\fIOPTIONS\fR]
-.br
-.B Dd-cli
 [\fICOMMAND\fR] [\fIOPTIONS\fR]
 .SH DESCRIPTION
 .B dd-cli
@@ -28,9 +25,7 @@ it prints usage text and exits successfully.
 The preferred command name is
 .BR dd-cli .
 .B doordash-cli
-and
-.B Dd-cli
-are installed aliases.
+is installed as a lowercase alias.
 .SH COMMANDS
 .TP
 .B auth-check
@@ -112,8 +107,8 @@ Freeform item instructions for
 .BR add-to-cart .
 .TP
 .BI --options-json " JSON"
-Structured option selections for configurable items. Nested recommended add-ons
-can be represented with recursive
+Structured option selections for configurable items. Some supported standalone
+recommended add-ons can be represented with recursive
 .B children
 arrays.
 .SH EXAMPLES
@@ -188,15 +183,13 @@ npm run install:man
 .EE
 .PP
 This links
-.BR dd-cli (1),
-.BR doordash-cli (1),
+.BR dd-cli (1)
 and
-.BR Dd-cli (1)
+.BR doordash-cli (1)
 into the user's local manpath, typically
 .I ~/.local/share/man/man1
 on Linux.
 .SH SEE ALSO
 .BR doordash-cli (1),
-.BR Dd-cli (1),
 .BR npm (1),
 .BR man (1)
