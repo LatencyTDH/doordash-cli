@@ -2,28 +2,27 @@
 
 > Unofficial, cart-safe DoorDash for the terminal.
 
-`doordash-cli` is a focused CLI for the parts of DoorDash that actually work well in a shell: sign in once, set your delivery context, search restaurants, inspect menus and items, inspect existing orders, and manage your cart with clean JSON output.
+`doordash-cli` is a focused CLI for the parts of DoorDash that work well in a shell: sign in once, set a delivery address, search restaurants, inspect menus and items, inspect existing orders, and manage a cart with clean JSON output.
 
-It deliberately stops before checkout.
+It stops before checkout.
 
 - no payment actions
-- no order placement
+- no checkout or order placement
 - no order mutation or cancellation
-- no “just one more flag” that can turn into an accidental purchase
 
-If you want a trustworthy terminal workflow for browsing, checking existing order status, and building a cart — without crossing the line into ordering — that is the whole point of this project.
+The goal is a trustworthy terminal workflow for browsing, checking order status, and building a cart without crossing into purchasing.
 
 ## Why this exists
 
-- **Cart-safe by design** — the command surface is intentionally limited to browse, read-only order inspection, and cart workflows.
+- **Cart-safe by design** — browse, read existing orders, and manage a cart; nothing beyond that.
 - **Direct API first** — core commands use DoorDash consumer-web GraphQL/HTTP where possible, not brittle DOM clicking.
-- **JSON-friendly output** — every command is scriptable.
-- **Fail-closed behavior** — if the CLI cannot prove a payload safely, it refuses instead of guessing.
+- **JSON-friendly** — every command is scriptable.
+- **Fail-closed** — if a request cannot be validated safely, the CLI refuses instead of guessing.
 - **Real CLI ergonomics** — short command name, help text, and man pages included.
 
 ## Install
 
-Today, the project is meant to be used from a local clone.
+Today the project is meant to run from a local clone.
 
 ```bash
 npm install
@@ -32,18 +31,18 @@ npm link
 npm run install:man
 ```
 
-That gives you these command names on your `PATH`:
+Command names:
 
 - `dd-cli` — preferred
 - `doordash-cli`
 
-If `auth-bootstrap` needs a browser binary on your machine, install Chromium once:
+If `auth-bootstrap` needs a browser binary, install Chromium once:
 
 ```bash
 npx playwright install chromium
 ```
 
-Verify everything worked:
+Verify the install:
 
 ```bash
 dd-cli --help
@@ -54,8 +53,8 @@ man doordash-cli
 ## Quick start
 
 ```bash
-# Check whether you already have a reusable session
-# (this can also import a compatible signed-in browser session when available)
+# Reuse an existing session if possible
+# (can also import a compatible signed-in browser session)
 dd-cli auth-check
 
 # If needed, sign in once and save reusable state
@@ -69,91 +68,62 @@ dd-cli search --query sushi
 dd-cli menu --restaurant-id 1721744
 dd-cli item --restaurant-id 1721744 --item-id 546936015
 
-# Inspect existing orders and then manage the cart
+# Inspect existing orders
 dd-cli orders
 dd-cli orders --active-only
 dd-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678
+
+# Build and inspect a cart
 dd-cli add-to-cart --restaurant-id 1721744 --item-id 876658890 --quantity 2
 dd-cli cart
 ```
 
 All commands print JSON.
 
-## Common examples
-
-Search by query, with or without a cuisine filter:
-
-```bash
-dd-cli search --query tacos
-dd-cli search --query tacos --cuisine mexican
-```
-
-Inspect a restaurant and a specific item:
-
-```bash
-dd-cli menu --restaurant-id 1721744
-dd-cli item --restaurant-id 1721744 --item-id 546936015
-```
-
-List existing orders or focus on active ones:
-
-```bash
-dd-cli orders
-dd-cli orders --active-only
-dd-cli orders --limit 5
-```
-
-Inspect one order by its returned ID / UUID:
-
-```bash
-dd-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678
-```
-
-Add by item ID or visible item name:
-
-```bash
-dd-cli add-to-cart --restaurant-id 1721744 --item-id 876658890 --quantity 2
-dd-cli add-to-cart --restaurant-id 1721744 --item-name "Spicy Tuna Roll"
-```
-
-Update quantity or remove an item:
-
-```bash
-dd-cli update-cart --cart-item-id 3b231d03-5a72-4636-8d12-c8769d706d45 --quantity 1
-dd-cli update-cart --cart-item-id 3b231d03-5a72-4636-8d12-c8769d706d45 --quantity 0
-```
-
-Clear saved session state when you want a clean reset:
-
-```bash
-dd-cli auth-clear
-```
-
 ## Command guide
 
 ### Session
 
-- `auth-check` — verify the saved session and optionally import a compatible signed-in browser session
+- `auth-check` — verify saved session state and optionally import a compatible signed-in browser session
 - `auth-bootstrap` — launch Chromium for a one-time manual sign-in flow and save reusable state
-- `auth-clear` — delete saved session state used by the CLI
+- `auth-clear` — delete saved session state
 
 ### Discovery
 
 - `set-address --address <text>` — resolve and persist the active delivery address
-- `search --query <text> [--cuisine <name>]` — search for restaurants
+- `search --query <text> [--cuisine <name>]` — search restaurants
 - `menu --restaurant-id <id>` — fetch a restaurant menu
-- `item --restaurant-id <id> --item-id <id>` — fetch detailed information for one item
+- `item --restaurant-id <id> --item-id <id>` — fetch one item in detail
 
 ### Existing orders
 
-- `orders [--limit <n>] [--active-only]` — list existing orders with current status, totals, timestamps, and item summaries
-- `order --order-id <id>` — inspect one existing order in more detail using its internal ID, `orderUuid`, or `deliveryUuid`
+- `orders [--limit <n>] [--active-only]` — list existing orders with status, totals, timestamps, and item summaries
+- `order --order-id <id>` — inspect one existing order by internal ID, `orderUuid`, or `deliveryUuid`
 
 ### Cart
 
 - `add-to-cart --restaurant-id <id> (--item-id <id> | --item-name <name>)` — add an item to the active cart
 - `update-cart --cart-item-id <id> --quantity <n>` — change quantity; use `0` to remove
 - `cart` — show the current cart
+
+## More examples
+
+```bash
+# Filter search results
+dd-cli search --query tacos --cuisine mexican
+
+# Limit order history output
+dd-cli orders --limit 5
+
+# Add by visible item name
+dd-cli add-to-cart --restaurant-id 1721744 --item-name "Spicy Tuna Roll"
+
+# Remove a cart item
+dd-cli update-cart --cart-item-id 3b231d03-5a72-4636-8d12-c8769d706d45 --quantity 0
+
+# Reset saved auth state
+dd-cli auth-clear
+```
 
 ## Configurable items
 
@@ -169,7 +139,7 @@ dd-cli add-to-cart \
   ]'
 ```
 
-Some standalone recommended add-ons that open a proven nested cursor step are also supported through recursive `children` selections:
+Some supported nested add-ons can include recursive `children` selections:
 
 ```bash
 dd-cli add-to-cart \
@@ -190,57 +160,28 @@ dd-cli add-to-cart \
 
 Guardrails:
 
-- unknown group IDs are rejected
-- unknown option IDs are rejected
+- unknown group IDs or option IDs are rejected
 - required min/max selection counts are enforced
 - duplicate nested selections are rejected
-- unsupported nested transport shapes fail closed instead of guessing
+- unsupported nested transport shapes fail closed
 
-## Safety model
+## Safety
 
-This project is intentionally narrow.
-
-The CLI accepts only an allowlisted set of browse, read-only existing-order, and cart commands. It blocks known out-of-scope commands immediately, including:
+The CLI only exposes allowlisted browse, existing-order, and cart commands. It hard-blocks out-of-scope actions such as:
 
 - `checkout`
 - `place-order`
-- `track-order` (use `orders` / `order` instead)
+- `track-order` (use `orders` / `order`)
 - payment-related actions
 - order mutation or cancellation actions
 
-Safety is enforced in code, not just in the README:
+Safety is enforced in code, not just in docs:
 
 - unsupported commands hard-fail
 - unknown flags are rejected before DoorDash work runs
 - direct cart mutations use validated request shapes
 - existing-order commands are read-only
 - unsupported nested option transports fail closed
-
-## Session model
-
-The CLI persists reusable session state between runs, so you do not need to sign in every time.
-
-Typical workflow:
-
-1. run `dd-cli auth-check`
-2. if needed, run `dd-cli auth-bootstrap`
-3. set the address with `dd-cli set-address ...`
-4. browse menus, inspect existing orders, and manage the cart from there
-
-When available, direct commands can also import a compatible already-signed-in managed-browser DoorDash session before falling back to a local browser bootstrap.
-
-## Manual pages
-
-The repo ships manual pages for both supported command names:
-
-- `man dd-cli`
-- `man doordash-cli`
-
-If you are working from a local checkout, install them with:
-
-```bash
-npm run install:man
-```
 
 ## Development
 
@@ -257,10 +198,9 @@ node dist/bin.js orders --help
 
 - This is an unofficial integration against DoorDash consumer-web traffic.
 - DoorDash can change request shapes, anti-bot behavior, or session handling at any time.
-- Order history uses consumer-web order data only; it does not expose checkout or mutation flows.
-- In some sessions DoorDash may challenge direct order-history GraphQL fetches. When that happens, the CLI falls back to the consumer-web orders page cache and tells you when the result may be partial.
+- Existing-order support is read-only; checkout and mutation flows are intentionally out of scope.
+- In some sessions DoorDash may challenge direct order-history GraphQL fetches. When that happens, the CLI falls back to the consumer-web orders page cache and tells you when results may be partial.
 - Review results before trusting them for anything important.
-- Because the tool is intentionally cart-safe, actual ordering still happens outside this CLI.
 
 ## License
 
