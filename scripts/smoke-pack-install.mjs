@@ -51,9 +51,10 @@ try {
   const installedManPage = join(installedPackageRoot, "man", "doordash-cli.1");
   const installedExamples = join(installedPackageRoot, "docs", "examples.md");
   const installedInstallGuide = join(installedPackageRoot, "docs", "install.md");
+  const installedChangelog = join(installedPackageRoot, "CHANGELOG.md");
   const installedLicense = join(installedPackageRoot, "LICENSE");
 
-  for (const expectedPath of [installedManPage, installedExamples, installedInstallGuide, installedLicense]) {
+  for (const expectedPath of [installedManPage, installedExamples, installedInstallGuide, installedChangelog, installedLicense]) {
     if (!existsSync(expectedPath)) {
       throw new Error(`Expected packaged file is missing after install: ${expectedPath}`);
     }
@@ -69,6 +70,7 @@ try {
           "man/doordash-cli.1",
           "docs/examples.md",
           "docs/install.md",
+          "CHANGELOG.md",
           "LICENSE",
         ],
       },

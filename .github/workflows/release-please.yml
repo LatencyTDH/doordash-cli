@@ -1,0 +1,70 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Prepare or publish release
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Check out tagged release
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+
+      - name: Set up Node.js
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm ci
+
+      - name: Validate tagged release
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm run validate
+
+      - name: Smoke-test packed install
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm run smoke:pack
+
+      - name: Build release tarball and checksum
+        id: pack
+        if: ${{ steps.release.outputs.release_created }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pack_json="$(npm pack --json)"
+          tarball="$(node -e 'const data = JSON.parse(process.argv[1]); if (!Array.isArray(data) || typeof data[0]?.filename !== "string") throw new Error(`Unexpected npm pack output: ${process.argv[1]}`); process.stdout.write(data[0].filename);' "$pack_json")"
+          shasum -a 256 "$tarball" > "$tarball.sha256"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Upload tarball assets to GitHub Release
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.release.outputs.tag_name }}" \
+            "${{ steps.pack.outputs.tarball }}" \
+            "${{ steps.pack.outputs.tarball }}.sha256" \
+            --clobber

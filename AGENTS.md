@@ -25,6 +25,7 @@ Repo-local guidance for contributors working on `doordash-cli`.
 - Keep PRs scoped. Do not mix unrelated install, release, or feature work into one branch unless it is truly required.
 - If you change commands, flags, or behavior, update the implementation, help text, README, man pages, and relevant tests in the same PR.
 - For command-surface changes, usually sync `src/lib.ts`, `src/cli.ts`, `README.md`, `man/dd-cli.1`, `man/doordash-cli.1`, and affected tests.
+- Release automation depends on conventional-commit squash titles on `main`. Keep PR titles and final squash titles in forms like `feat: ...`, `fix: ...`, or `feat!: ...` so versioning and release notes stay clean.
 
 ## Validation and merge
 
