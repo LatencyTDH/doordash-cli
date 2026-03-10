@@ -1,252 +1,364 @@
 # doordash-cli
 
-Local DoorDash CLI with a deliberately small, cart-safe command surface.
+> Cart-safe DoorDash from the terminal.
 
-## Safety model
+`doordash-cli` is a focused CLI for the parts of DoorDash that make sense in a shell: sign in, set delivery context, search stores, inspect menus and items, and manage the cart. It deliberately stops before checkout, payment, tracking, or order placement.
 
-This project is intentionally limited to browsing and cart management:
+That small scope is the point. The tool is designed to be useful, scriptable, and hard to misuse.
 
-- `auth-check`
-- `auth-bootstrap`
-- `auth-clear`
-- `set-address`
-- `search`
-- `menu`
-- `item`
-- `add-to-cart`
-- `update-cart`
-- `cart`
+## Why use it?
 
-It does **not** expose or call:
+- **Cart-safe by design** — no checkout, payment, or order-submission commands.
+- **Direct API first** — core flows use DoorDash consumer-web GraphQL/HTTP instead of brittle DOM clicking.
+- **JSON output** — every command is easy to pipe into `jq`, scripts, or other tooling.
+- **Fast local workflow** — bootstrap a session once, then browse and manage cart state from the shell.
+- **Fail-closed behavior** — if the CLI cannot prove a payload safely, it refuses instead of guessing.
+
+## What it does
+
+`doordash-cli` supports:
+
+- auth/session checks
+- one-time auth bootstrap in a browser
+- clearing saved session state
+- setting the active delivery address
+- searching for restaurants
+- fetching restaurant menus
+- fetching item details
+- adding items to the cart
+- updating cart quantities
+- viewing the current cart
+
+It does **not** support:
 
 - checkout
 - place-order
-- track-order
 - payment actions
-
-The CLI enforces this in code, not just docs:
-
-- only allowlisted commands are accepted
-- known dangerous commands return a hard failure immediately
-- unknown flags are rejected before any DoorDash work runs
-
-## Direct API approach
-
-The primary path is DoorDash consumer-web GraphQL/HTTP, not DOM clicking:
-
-- `auth-check`, `set-address`, `search`, `menu`, `item`, `cart`, `add-to-cart`, and `update-cart` use direct request builders + parsers
-- browser usage is limited to:
-  - one-time manual session bootstrap via `auth-bootstrap`
-  - automatic session import from an already-open signed-in OpenClaw managed browser
-  - protocol research / recovery when DoorDash changes behavior
-
-This keeps the core integration focused on stable request/response shapes instead of fragile page selectors.
+- track-order
 
 ## Install
 
-From this directory:
+### From a local clone
 
 ```bash
 npm install
 npm run build
 npm link
+npm run install:man
 ```
 
-`npm link` puts the CLI on your `PATH` with these command names:
+That gives you these command names on your `PATH`:
 
-- `dd-cli`
+- `dd-cli` — preferred
 - `doordash-cli`
-- `Dd-cli` (compatibility alias; lowercase `dd-cli` is still the preferred spelling)
+- `Dd-cli` — compatibility alias
 
-If Playwright asks for browser binaries, install Chromium:
+If Playwright asks for a browser binary during auth bootstrap, install Chromium:
 
 ```bash
 npx playwright install chromium
 ```
 
-## Usage
-
-Run the compiled CLI directly:
-
-```bash
-node dist/bin.js --help
-```
-
-Or after `npm link`:
+### Verify the install
 
 ```bash
 dd-cli --help
-dd-cli -h
-dd-cli
-doordash-cli --help
-dd-cli —help
-Dd-cli --help
+man dd-cli
+man doordash-cli
 ```
 
-Notes:
+### Why `npm run install:man`?
 
-- `dd-cli` with no arguments prints usage/help instead of failing silently.
-- Common Unicode long dashes from messaging/mobile input are normalized for flags, so `—help` and `–help` work.
-- Shell commands are case-sensitive in general; `Dd-cli` is included only as a small compatibility alias. Prefer lowercase `dd-cli` in docs/scripts.
+The project ships real man pages in `man/`, and the package metadata includes them for standard installs. For a local clone plus `npm link`, `npm run install:man` links those pages into your local manpath so `man dd-cli` works immediately.
 
-Examples:
+On Linux, the default install target is usually:
+
+```text
+~/.local/share/man/man1
+```
+
+## Quick start
+
+Check whether you already have a reusable session:
 
 ```bash
 dd-cli auth-check
-dd-cli auth-bootstrap
-dd-cli auth-clear
-dd-cli set-address --address "350 5th Ave, New York, NY 10118"
-dd-cli search --query sushi
-dd-cli search --query tacos --cuisine mexican
-dd-cli menu --restaurant-id 1721744
-dd-cli item --restaurant-id 1721744 --item-id 546936015
-dd-cli add-to-cart --restaurant-id 1721744 --item-id 876658890 --quantity 2
-dd-cli add-to-cart --restaurant-id 1721744 --item-id 546936015 --options-json '[{"groupId":"703393388","optionId":"4716032529"},{"groupId":"703393389","optionId":"4716042466"}]'
-dd-cli update-cart --cart-item-id 3b231d03-5a72-4636-8d12-c8769d706d45 --quantity 1
-dd-cli cart
 ```
 
-Output is JSON so it can be scripted easily.
-
-## Session / auth expectations
-
-The CLI keeps session material under the same config root as the upstream project:
-
-- cookies: `~/.config/striderlabs-mcp-doordash/cookies.json`
-- direct-session browser state: `~/.config/striderlabs-mcp-doordash/storage-state.json`
-
-### Managed-browser auto-import
-
-If an OpenClaw-managed browser is already running with a signed-in DoorDash tab/session, `auth-check` and other direct commands automatically try to import that state into the saved direct-session files before launching a new local browser context.
-
-Default probe order:
-
-- `DOORDASH_MANAGED_BROWSER_CDP_URL`
-- `OPENCLAW_BROWSER_CDP_URL`
-- `OPENCLAW_OPENCLAW_CDP_URL`
-- OpenClaw config hints from `~/.openclaw/openclaw.json`
-- fallback default `http://127.0.0.1:18800`
-
-### Recommended bootstrap
-
-Use `auth-bootstrap` once when you need a fresh reusable session and there is no already-open signed-in managed browser to import:
+If not, bootstrap one interactively:
 
 ```bash
 dd-cli auth-bootstrap
 ```
 
-That opens Chromium, lets you sign in manually, then saves the browser state for later direct API calls.
+Set the delivery address:
+
+```bash
+dd-cli set-address --address "350 5th Ave, New York, NY 10118"
+```
+
+Search for something nearby:
+
+```bash
+dd-cli search --query sushi
+dd-cli search --query tacos --cuisine mexican
+```
+
+Inspect a menu and an item:
+
+```bash
+dd-cli menu --restaurant-id 1721744
+dd-cli item --restaurant-id 1721744 --item-id 546936015
+```
+
+Add an item, then inspect the cart:
+
+```bash
+dd-cli add-to-cart --restaurant-id 1721744 --item-id 876658890 --quantity 2
+dd-cli cart
+```
+
+All output is JSON.
+
+## Manual pages
+
+The CLI ships with standard man pages:
+
+- `man dd-cli`
+- `man doordash-cli`
+- `man Dd-cli`
+
+If you are working from a local checkout, run:
+
+```bash
+npm run install:man
+```
+
+The canonical source files live here:
+
+- `man/dd-cli.1`
+- `man/doordash-cli.1`
+- `man/Dd-cli.1`
+
+## Command reference
 
 ### `auth-check`
 
-`auth-check` performs a direct `consumer` query and reports whether the saved state appears logged in, plus the default address if DoorDash returns one.
+Checks whether the saved session appears authenticated.
 
-## Current scope / gaps
+```bash
+dd-cli auth-check
+```
 
-### Implemented direct support
+This command can also import an already-signed-in compatible managed-browser session when a usable CDP endpoint is available.
 
-- auth/session check
-- managed-browser session import into saved direct-session state
-- search
-- menu fetch
-- item detail fetch
-- cart read
-- add-to-cart for quick-add items
-- add-to-cart for configurable items **when explicit `--options-json` selections are provided and all selected options are validated against item/menu data**
-- add-to-cart for standalone recommended add-ons that open a nested cursor-driven child step **when the child selections are supplied via `children` in `--options-json` and the group is a proven `recommended_option_*` standalone transport**
-- automatic stale-cart protection when switching restaurants: if the active cart belongs to a different store, `add-to-cart` clears the old `cartId` instead of trying to reuse it
-- update-cart by cart item id
-- direct address persistence for both:
-  - saved addresses already present in the account's DoorDash address book
-  - brand-new freeform addresses resolved through DoorDash autocomplete + geo `get-or-create` + `addConsumerAddressV2`
+### `auth-bootstrap`
 
-### Not implemented / intentionally limited
+Opens Chromium so you can sign in once and save reusable session state.
 
-- checkout / order placement / tracking / payment
-- non-recommended nested cursor-driven option trees whose transport is not yet directly provable from DoorDash's standalone-item batch cart path
+```bash
+dd-cli auth-bootstrap
+```
 
-If the CLI cannot prove a payload safely from known item/address data, it fails closed with a clear message instead of guessing.
+### `auth-clear`
 
-## `set-address` note
+Clears saved session state used by the CLI.
 
-`set-address` is now direct for both saved and brand-new addresses:
+```bash
+dd-cli auth-clear
+```
 
-- the CLI first looks for a match in `getAvailableAddresses`
-- if needed, it uses autocomplete + geo `get-or-create` to resolve the freeform text
-- when DoorDash already exposes a matching saved address, it calls `updateConsumerDefaultAddressV2(defaultAddressId)`
-- otherwise it builds the exact `addConsumerAddressV2(...)` mutation payload DoorDash web uses for new-address enrollment and lets DoorDash persist the address directly
+### `set-address`
 
-The CLI still fails closed if DoorDash resolves the text but omits required fields for a complete `addConsumerAddressV2` payload (for example, missing stable coordinates or place id).
+Sets the active delivery address.
 
-## Configurable items note
+```bash
+dd-cli set-address --address "350 5th Ave, New York, NY 10118"
+```
+
+Behavior:
+
+- reuses an existing saved address when possible
+- otherwise resolves the address through DoorDash's address APIs
+- persists the resulting delivery context for later commands
+
+### `search`
+
+Searches for restaurants.
+
+```bash
+dd-cli search --query sushi
+dd-cli search --query tacos --cuisine mexican
+```
+
+Flags:
+
+- `--query <text>` — required
+- `--cuisine <name>` — optional
+
+### `menu`
+
+Fetches a restaurant menu.
+
+```bash
+dd-cli menu --restaurant-id 1721744
+```
+
+Flags:
+
+- `--restaurant-id <id>` — required
+
+### `item`
+
+Fetches details for a single item.
+
+```bash
+dd-cli item --restaurant-id 1721744 --item-id 546936015
+```
+
+Flags:
+
+- `--restaurant-id <id>` — required
+- `--item-id <id>` — required
+
+### `add-to-cart`
+
+Adds an item to the cart.
+
+```bash
+dd-cli add-to-cart --restaurant-id 1721744 --item-id 876658890 --quantity 2
+```
+
+You can also look up by item name:
+
+```bash
+dd-cli add-to-cart --restaurant-id 1721744 --item-name "Spicy Tuna Roll"
+```
+
+Flags:
+
+- `--restaurant-id <id>` — required
+- `--item-id <id>` or `--item-name <name>` — one is required
+- `--quantity <n>` — optional, defaults to `1`
+- `--special-instructions <text>` — optional
+- `--options-json <json>` — required for configurable items
+
+#### Configurable items
 
 For items with required option groups, pass `--options-json` as a JSON array of selection objects:
 
-```json
-[
-  { "groupId": "703393388", "optionId": "4716032529" },
-  { "groupId": "703393389", "optionId": "4716042466" }
-]
+```bash
+dd-cli add-to-cart \
+  --restaurant-id 1721744 \
+  --item-id 546936015 \
+  --options-json '[
+    {"groupId":"703393388","optionId":"4716032529"},
+    {"groupId":"703393389","optionId":"4716042466"}
+  ]'
 ```
 
-Nested standalone recommended add-ons use recursive `children` selections:
+Nested recommended add-ons use recursive `children` selections:
 
-```json
-[
-  { "groupId": "703393388", "optionId": "4716032529" },
-  { "groupId": "703393389", "optionId": "4716042466" },
-  {
-    "groupId": "recommended_option_546935995",
-    "optionId": "546936011",
-    "children": [{ "groupId": "780057412", "optionId": "4702669757" }]
-  }
-]
+```bash
+dd-cli add-to-cart \
+  --restaurant-id 1721744 \
+  --item-id 546936015 \
+  --options-json '[
+    {"groupId":"703393388","optionId":"4716032529"},
+    {"groupId":"703393389","optionId":"4716042466"},
+    {
+      "groupId":"recommended_option_546935995",
+      "optionId":"546936011",
+      "children":[
+        {"groupId":"780057412","optionId":"4702669757"}
+      ]
+    }
+  ]'
 ```
 
 Guardrails:
 
 - unknown group IDs are rejected
 - unknown option IDs are rejected
-- min/max group counts are enforced
-- duplicate selections with nested `children` are rejected
-- only DoorDash's proven standalone recommended-item transport (`recommended_option_*` → `lowPriorityBatchAddCartItemInput`) is used for nested cursor steps
-- other non-recommended `nextCursor` trees still fail closed instead of guessing a cart shape
+- required min/max selection counts are enforced
+- duplicate nested selections are rejected
+- unsupported nested transport shapes fail closed instead of guessing
 
-## Security caveats
+### `update-cart`
 
-- This is an unofficial integration against DoorDash consumer-web traffic.
-- DoorDash can change request shapes, anti-bot checks, or session behavior at any time.
-- Review results before trusting them for anything important.
-- Because this tool is intentionally cart-safe, actual ordering still requires a manual step outside this CLI.
+Updates a cart item's quantity.
+
+```bash
+dd-cli update-cart --cart-item-id 3b231d03-5a72-4636-8d12-c8769d706d45 --quantity 1
+```
+
+Flags:
+
+- `--cart-item-id <id>` — required
+- `--quantity <n>` — required
+
+Set quantity to `0` to remove an item.
+
+### `cart`
+
+Returns the current cart.
+
+```bash
+dd-cli cart
+```
+
+## Session model
+
+The CLI persists reusable session state between runs so you do not need to sign in every time.
+
+The normal workflow is:
+
+1. run `dd-cli auth-bootstrap` once if needed
+2. confirm with `dd-cli auth-check`
+3. set an address with `dd-cli set-address ...`
+4. browse menus and manage the cart from there
+
+When available, `auth-check` and other direct commands may also import a compatible already-signed-in managed-browser DoorDash session before falling back to a fresh local browser context.
+
+## Safety model
+
+This project is intentionally small and opinionated.
+
+Safety is enforced in code, not just in the README:
+
+- only allowlisted commands are accepted
+- known dangerous commands hard-fail immediately
+- unknown flags are rejected before any DoorDash work runs
+- direct cart mutations use validated request shapes
+- unsupported nested option transports fail closed
+
+If you try commands like `checkout` or `place-order`, the CLI blocks them immediately.
 
 ## Development
 
-Validation commands:
+Validate the repo with:
 
 ```bash
-npm run typecheck
-npm run build
-npm test
+npm run validate
+npm pack --dry-run
 node dist/bin.js --help
-node dist/bin.js
-node dist/bin.js checkout
-node dist/bin.js cart --payment-method visa
 ```
 
-Expected behavior:
+Useful checks while iterating on docs and packaging:
 
-- typecheck passes
-- build passes
-- tests pass
-- help shows only the safe command surface
-- no-arg invocation prints usage/help
-- `checkout` fails immediately as blocked
-- unknown flags fail before any DoorDash work runs
+```bash
+npm run install:man
+man dd-cli
+man doordash-cli
+```
 
-## Implementation notes
+## Caveats
 
-- Direct request builders, parsers, managed-browser import, and address/configurable-item helpers live in `src/direct-api.ts`
-- Safe command allowlist and command dispatch live in `src/lib.ts`
-- CLI parsing/output lives in `src/cli.ts`
-- Installed command entrypoints (`dd-cli`, `doordash-cli`, `Dd-cli`) resolve to `src/bin.ts`
-- Tests cover allowlist guardrails plus direct request-building and parsing helpers
+- This is an unofficial integration against DoorDash consumer-web traffic.
+- DoorDash can change request shapes, anti-bot behavior, or session handling at any time.
+- Review results before trusting them for anything important.
+- Because the tool is intentionally cart-safe, actual ordering still happens outside this CLI.
+
+## License
+
+ISC

@@ -10,15 +10,23 @@
     "doordash-cli": "dist/bin.js",
     "Dd-cli": "dist/bin.js"
   },
+  "man": [
+    "man/dd-cli.1",
+    "man/doordash-cli.1",
+    "man/Dd-cli.1"
+  ],
   "files": [
     "dist",
+    "man",
+    "scripts/install-manpage.sh",
     "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test dist/*.test.js",
-    "validate": "npm run typecheck && npm test"
+    "validate": "npm run typecheck && npm test",
+    "install:man": "bash scripts/install-manpage.sh"
   },
   "keywords": [
     "doordash",
@@ -26,7 +34,7 @@
     "playwright",
     "cart-safe"
   ],
-  "author": "OpenClaw",
+  "author": "doordash-cli contributors",
   "license": "ISC",
   "repository": {
     "type": "git",

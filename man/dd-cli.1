@@ -1,0 +1,202 @@
+.TH DD-CLI 1 "2026-03-10" "doordash-cli 0.1.0" "User Commands"
+.SH NAME
+dd-cli, doordash-cli, Dd-cli \- cart-safe DoorDash CLI for browsing, address setup, and cart management
+.SH SYNOPSIS
+.B dd-cli
+[\fICOMMAND\fR] [\fIOPTIONS\fR]
+.br
+.B doordash-cli
+[\fICOMMAND\fR] [\fIOPTIONS\fR]
+.br
+.B Dd-cli
+[\fICOMMAND\fR] [\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B dd-cli
+is a focused DoorDash command line interface for the parts of the workflow that
+fit well in a terminal: signing in, setting delivery context, searching stores,
+inspecting menus and items, and managing the cart.
+.PP
+The command surface is intentionally small. The CLI does not expose checkout,
+order placement, payment actions, or order tracking. If a payload cannot be
+validated safely from known DoorDash consumer-web request shapes, the tool fails
+closed instead of guessing.
+.PP
+If invoked with no command, or with
+.BR -h / --help ,
+it prints usage text and exits successfully.
+.PP
+The preferred command name is
+.BR dd-cli .
+.B doordash-cli
+and
+.B Dd-cli
+are installed aliases.
+.SH COMMANDS
+.TP
+.B auth-check
+Verify whether the saved session appears authenticated. This command can also
+import an already-signed-in compatible managed-browser DoorDash session when a
+usable CDP endpoint is available.
+.TP
+.B auth-bootstrap
+Launch Chromium for a one-time manual sign-in flow, then save reusable browser
+state for later direct API calls.
+.TP
+.B auth-clear
+Delete stored session material used by this CLI.
+.TP
+.BI "set-address --address " ADDRESS
+Resolve and persist the active delivery address. Saved addresses are reused when
+possible; new addresses are enrolled through DoorDash's consumer-web address
+APIs.
+.TP
+.BI "search --query " TEXT " [--cuisine " CUISINE "]"
+Search for restaurants matching a query, optionally narrowed by cuisine.
+.TP
+.BI "menu --restaurant-id " ID
+Fetch a restaurant menu.
+.TP
+.BI "item --restaurant-id " ID " --item-id " ITEM_ID
+Fetch detailed information for a single item.
+.TP
+.BI "add-to-cart --restaurant-id " ID " (--item-id " ITEM_ID " | --item-name " NAME ") [--quantity " N "] [--special-instructions " TEXT "] [--options-json " JSON "]"
+Add an item to the active cart. Configurable items require explicit option
+selections via
+.BR --options-json .
+.TP
+.BI "update-cart --cart-item-id " ID " --quantity " N
+Update a cart item's quantity. Use quantity
+.B 0
+to remove it.
+.TP
+.B cart
+Show the current cart.
+.SH OPTIONS
+.TP
+.BR -h , " --help"
+Show usage information.
+.TP
+.BI --address " ADDRESS"
+Freeform delivery address for
+.BR set-address .
+.TP
+.BI --query " TEXT"
+Restaurant search query.
+.TP
+.BI --cuisine " CUISINE"
+Optional cuisine filter for
+.BR search .
+.TP
+.BI --restaurant-id " ID"
+DoorDash restaurant identifier used by
+.BR menu ,
+.BR item ,
+and
+.BR add-to-cart .
+.TP
+.BI --item-id " ID"
+DoorDash item identifier.
+.TP
+.BI --item-name " NAME"
+Fallback item lookup by visible item name when an item ID is not convenient.
+.TP
+.BI --quantity " N"
+Positive integer quantity for add/update operations.
+.TP
+.BI --cart-item-id " ID"
+DoorDash cart item identifier for
+.BR update-cart .
+.TP
+.BI --special-instructions " TEXT"
+Freeform item instructions for
+.BR add-to-cart .
+.TP
+.BI --options-json " JSON"
+Structured option selections for configurable items. Nested recommended add-ons
+can be represented with recursive
+.B children
+arrays.
+.SH EXAMPLES
+.PP
+Show help and read the manual:
+.PP
+.EX
+dd-cli --help
+man dd-cli
+.EE
+.PP
+Bootstrap a reusable session:
+.PP
+.EX
+dd-cli auth-bootstrap
+.EE
+.PP
+Set an address and search for sushi:
+.PP
+.EX
+dd-cli set-address --address "350 5th Ave, New York, NY 10118"
+dd-cli search --query sushi
+.EE
+.PP
+Inspect a menu and item:
+.PP
+.EX
+dd-cli menu --restaurant-id 1721744
+dd-cli item --restaurant-id 1721744 --item-id 546936015
+.EE
+.PP
+Add a configurable item to the cart:
+.PP
+.EX
+dd-cli add-to-cart \
+  --restaurant-id 1721744 \
+  --item-id 546936015 \
+  --options-json '[{"groupId":"703393388","optionId":"4716032529"},{"groupId":"703393389","optionId":"4716042466"}]'
+.EE
+.SH OUTPUT
+Commands print JSON on standard output so they can be piped into shell tools,
+parsers, or scripts.
+.SH SESSION STORAGE
+The CLI persists reusable session state under the user's configuration
+directory. The exact file layout is an implementation detail and may evolve over
+time, but the saved state is reused across runs unless cleared with
+.BR auth-clear .
+.SH ENVIRONMENT
+.TP
+.B DOORDASH_MANAGED_BROWSER_CDP_URL
+Preferred Chrome DevTools Protocol endpoint for importing an already-signed-in
+compatible managed-browser session.
+.PP
+The CLI may also honor additional compatible CDP endpoint environment variables
+for integration convenience.
+.SH EXIT STATUS
+.TP
+.B 0
+Success, including help and no-argument usage output.
+.TP
+.B 1
+Validation error, blocked command, unsupported flag, or runtime failure.
+.SH SAFETY
+The CLI is intentionally limited to browsing and cart management. Dangerous
+commands such as checkout, place-order, order tracking, and payment actions are
+blocked immediately.
+.SH MAN PAGE INSTALLATION
+For cloned or linked development checkouts, install the local manual pages with:
+.PP
+.EX
+npm run install:man
+.EE
+.PP
+This links
+.BR dd-cli (1),
+.BR doordash-cli (1),
+and
+.BR Dd-cli (1)
+into the user's local manpath, typically
+.I ~/.local/share/man/man1
+on Linux.
+.SH SEE ALSO
+.BR doordash-cli (1),
+.BR Dd-cli (1),
+.BR npm (1),
+.BR man (1)

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync } from "node:fs";
+import { chmodSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -95,7 +95,19 @@ test("help output shows the direct cart-safe command surface", () => {
   assert.match(result.stdout, /auth-bootstrap/);
   assert.match(result.stdout, /set-address --address/);
   assert.match(result.stdout, /options-json/);
+  assert.match(result.stdout, /man dd-cli/);
   assert.match(result.stdout, /Dangerous commands are intentionally unsupported/);
+});
+
+test("repository ships man pages for the primary and alias command names", () => {
+  const ddManPath = join(distDir, "..", "man", "dd-cli.1");
+  const aliasManPath = join(distDir, "..", "man", "doordash-cli.1");
+  const compatibilityAliasManPath = join(distDir, "..", "man", "Dd-cli.1");
+
+  assert.match(readFileSync(ddManPath, "utf8"), /\.TH DD-CLI 1/);
+  assert.match(readFileSync(ddManPath, "utf8"), /dd-cli, doordash-cli, Dd-cli/);
+  assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
+  assert.equal(readFileSync(compatibilityAliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
 });
 
 test("-h and no-arg invocation both show usage", () => {
