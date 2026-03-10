@@ -47,7 +47,7 @@ export function usage(): string {
     "  - install-browser downloads the matching Playwright Chromium build used by this package.",
     "  - Manual pages ship with the project: man dd-cli or man doordash-cli.",
     "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, orders, order, cart, add-to-cart, and update-cart.",
-    "  - auth-check can import an already-signed-in compatible managed-browser DoorDash session when one is available.",
+    "  - auth-check can reuse an already-signed-in compatible DoorDash browser session when one is available.",
     "  - set-address now uses DoorDash autocomplete/get-or-create plus addConsumerAddressV2 for brand-new address enrollment when needed.",
     "  - configurable items require explicit --options-json selections.",
     '  - standalone recommended add-ons that open a nested cursor step are supported via children, e.g. [{"groupId":"recommended_option_546935995","optionId":"546936011","children":[{"groupId":"780057412","optionId":"4702669757"}]}].',
