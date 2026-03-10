@@ -1,4 +1,4 @@
-import { cleanup as browserCleanup, setAddress } from "@striderlabs/mcp-doordash/dist/browser.js";
+import { cleanup as browserCleanup } from "@striderlabs/mcp-doordash/dist/browser.js";
 import {
   addToCartDirect,
   bootstrapAuthSession,
@@ -8,7 +8,9 @@ import {
   getCartDirect,
   getItemDirect,
   getMenuDirect,
+  parseOptionSelectionsJson,
   searchRestaurantsDirect,
+  setAddressDirect,
   updateCartDirect,
   type AddToCartResult,
   type AuthBootstrapResult,
@@ -17,6 +19,7 @@ import {
   type ItemResult,
   type MenuResult,
   type SearchResult,
+  type SetAddressResult,
   type UpdateCartResult,
 } from "./direct-api.js";
 
@@ -54,7 +57,7 @@ const COMMAND_FLAGS = {
   search: ["query", "cuisine"],
   menu: ["restaurant-id"],
   item: ["restaurant-id", "item-id"],
-  "add-to-cart": ["restaurant-id", "item-id", "item-name", "quantity", "special-instructions"],
+  "add-to-cart": ["restaurant-id", "item-id", "item-name", "quantity", "special-instructions", "options-json"],
   "update-cart": ["cart-item-id", "quantity"],
   cart: [],
 } as const satisfies Record<SafeCommand, readonly string[]>;
@@ -63,7 +66,7 @@ export type CommandResult =
   | AuthResult
   | AuthBootstrapResult
   | { success: true; message: string; cookiesPath: string; storageStatePath: string }
-  | Awaited<ReturnType<typeof setAddress>>
+  | SetAddressResult
   | SearchResult
   | MenuResult
   | ItemResult
@@ -120,7 +123,7 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
 
     case "set-address": {
       const address = requiredArg(args, "address");
-      return setAddress(address);
+      return setAddressDirect(address);
     }
 
     case "search": {
@@ -146,6 +149,7 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
       const itemName = optionalArg(args, "item-name");
       const quantityRaw = optionalArg(args, "quantity");
       const specialInstructions = optionalArg(args, "special-instructions");
+      const optionsJson = optionalArg(args, "options-json");
       const quantity = quantityRaw === undefined ? 1 : Number.parseInt(quantityRaw, 10);
 
       if (!itemId && !itemName) {
@@ -162,6 +166,7 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
         itemName,
         quantity,
         specialInstructions,
+        optionSelections: optionsJson ? parseOptionSelectionsJson(optionsJson) : [],
       });
     }
 

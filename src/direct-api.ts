@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { chromium, type Browser, type BrowserContext, type Cookie, type Page } from "playwright";
@@ -294,6 +295,67 @@ const ITEM_QUERY = `query itemPage(
           value
         }
       }
+    }
+  }
+}`;
+
+const GET_AVAILABLE_ADDRESSES_QUERY = `query getAvailableAddresses {
+  getAvailableAddresses {
+    id
+    addressId
+    street
+    city
+    subpremise
+    state
+    zipCode
+    country
+    countryCode
+    lat
+    lng
+    districtId
+    manualLat
+    manualLng
+    timezone
+    shortname
+    printableAddress
+    driverInstructions
+    buildingName
+    entryCode
+    addressLinkType
+    formattedAddressSegmentedList
+    formattedAddressSegmentedNonUserEditableFieldsList
+    personalAddressLabel {
+      labelIcon
+      labelName
+    }
+    dropoffPreferences {
+      allPreferences {
+        optionId
+        isDefault
+        instructions
+      }
+    }
+  }
+}`;
+
+const UPDATE_CONSUMER_DEFAULT_ADDRESS_MUTATION = `mutation updateConsumerDefaultAddressV2($defaultAddressId: ID!) {
+  updateConsumerDefaultAddressV2(defaultAddressId: $defaultAddressId) {
+    defaultAddress {
+      id
+      addressId
+      printableAddress
+      shortname
+      zipCode
+      submarketId
+    }
+    availableAddresses {
+      id
+      addressId
+      printableAddress
+      shortname
+    }
+    orderCart {
+      id
     }
   }
 }`;
@@ -628,6 +690,40 @@ export type UpdateCartResult = CartResult & {
   updatedCartItemId: string;
 };
 
+export type RequestedOptionSelection = {
+  groupId: string;
+  optionId: string;
+  quantity?: number;
+};
+
+export type BuiltNestedOption = {
+  id: string;
+  quantity: number;
+  options: BuiltNestedOption[];
+  itemExtraOption: {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    itemExtraName: null;
+    chargeAbove: number;
+    defaultQuantity: number;
+    itemExtraId: string;
+    itemExtraNumFreeOptions: number;
+    menuItemExtraOptionPrice: number;
+    menuItemExtraOptionBasePrice: null;
+  };
+};
+
+export type SetAddressResult = {
+  success: true;
+  mode: "direct-saved-address";
+  requestedAddress: string;
+  matchedAddressId: string;
+  matchedAddressSource: "saved-address" | "autocomplete-address-id" | "autocomplete-text";
+  printableAddress: string | null;
+};
+
 export type AddToCartPayload = {
   addCartItemInput: {
     storeId: string;
@@ -679,6 +775,80 @@ export type UpdateCartPayload = {
   returnCartFromOrderService: boolean;
 };
 
+type AvailableAddressGraph = {
+  id?: string | null;
+  addressId?: string | null;
+  street?: string | null;
+  city?: string | null;
+  subpremise?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  districtId?: number | null;
+  manualLat?: number | null;
+  manualLng?: number | null;
+  timezone?: string | null;
+  shortname?: string | null;
+  printableAddress?: string | null;
+  driverInstructions?: string | null;
+  buildingName?: string | null;
+  entryCode?: string | null;
+  addressLinkType?: string | null;
+  formattedAddressSegmentedList?: string[] | null;
+  formattedAddressSegmentedNonUserEditableFieldsList?: string[] | null;
+};
+
+type UpdateConsumerDefaultAddressGraph = {
+  defaultAddress?: {
+    id?: string | null;
+    addressId?: string | null;
+    printableAddress?: string | null;
+    shortname?: string | null;
+    zipCode?: string | null;
+    submarketId?: number | null;
+  } | null;
+  availableAddresses?: AvailableAddressGraph[] | null;
+};
+
+type AddressAutocompletePrediction = {
+  lat?: number | null;
+  lng?: number | null;
+  formatted_address?: string | null;
+  formatted_address_short?: string | null;
+  formatted_address_segmented?: string[] | null;
+  formatted_address_segmented_non_user_editable_fields?: string[] | null;
+  country_shortname?: string | null;
+  source_place_id?: string | null;
+  geo_address_id?: string | null;
+  postal_code?: string | null;
+  postal_code_suffix?: string | null;
+  administrative_area_level1?: string | null;
+  locality?: string | null;
+  street_address?: string | null;
+};
+
+type AddressAutocompleteResponse = {
+  predictions?: AddressAutocompletePrediction[] | null;
+};
+
+type GeoAddressResponse = {
+  address?: {
+    id?: string | null;
+    formatted_address?: string | null;
+    formatted_address_short?: string | null;
+    street_address?: string | null;
+    locality?: string | null;
+    administrative_area_level1?: string | null;
+    postal_code?: string | null;
+    country_shortname?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+  } | null;
+};
+
 type ConsumerGraph = {
   id?: string | null;
   userId?: string | null;
@@ -708,11 +878,14 @@ class DoorDashDirectSession {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
+  private attemptedManagedImport = false;
 
   async init(options: DirectBrowserOptions = {}): Promise<Page> {
     if (this.page) {
       return this.page;
     }
+
+    await this.maybeImportManagedBrowserSession();
 
     const storageStatePath = getStorageStatePath();
     this.browser = await chromium.launch({
@@ -741,12 +914,61 @@ class DoorDashDirectSession {
   }
 
   async graphql<T>(operationName: string, query: string, variables: Record<string, unknown>): Promise<T> {
+    const raw = await this.requestRaw({
+      url: `${BASE_URL}/graphql/${operationName}?operation=${operationName}`,
+      method: "POST",
+      headers: GRAPHQL_HEADERS,
+      body: JSON.stringify({ operationName, variables, query }),
+    });
+
+    return parseGraphQlResponse<T>(operationName, raw.status, raw.text);
+  }
+
+  async requestJson<T>(input: {
+    url: string;
+    method?: "GET" | "POST";
+    headers?: Record<string, string>;
+    body?: string;
+    operationName?: string;
+  }): Promise<T> {
+    const raw = await this.requestRaw(input);
+    const parsed = safeJsonParse<T>(raw.text);
+    if (!parsed) {
+      const label = input.operationName ?? input.url;
+      throw new Error(`DoorDash ${label} returned HTTP ${raw.status} with a non-JSON response. Response snippet: ${truncate(raw.text, 240)}`);
+    }
+
+    return parsed;
+  }
+
+  async saveState(): Promise<void> {
+    if (!this.context) {
+      return;
+    }
+
+    await saveContextState(this.context);
+  }
+
+  async close(): Promise<void> {
+    await this.page?.close().catch(() => {});
+    await this.context?.close().catch(() => {});
+    await this.browser?.close().catch(() => {});
+    this.page = null;
+    this.context = null;
+    this.browser = null;
+  }
+
+  private async requestRaw(input: {
+    url: string;
+    method?: "GET" | "POST";
+    headers?: Record<string, string>;
+    body?: string;
+  }): Promise<{ status: number; text: string }> {
     const page = await this.init();
-    const url = `${BASE_URL}/graphql/${operationName}?operation=${operationName}`;
-    const raw = await page.evaluate(
-      async ({ targetUrl, body, headers }) => {
+    return page.evaluate(
+      async ({ targetUrl, method, headers, body }) => {
         const response = await fetch(targetUrl, {
-          method: "POST",
+          method,
           headers,
           body,
         });
@@ -757,35 +979,21 @@ class DoorDashDirectSession {
         };
       },
       {
-        targetUrl: url,
-        body: JSON.stringify({ operationName, variables, query }),
-        headers: GRAPHQL_HEADERS,
+        targetUrl: input.url,
+        method: input.method ?? "GET",
+        headers: input.headers ?? {},
+        body: input.body,
       },
     );
-
-    return parseGraphQlResponse<T>(operationName, raw.status, raw.text);
   }
 
-  async saveState(): Promise<void> {
-    if (!this.context) {
+  private async maybeImportManagedBrowserSession(): Promise<void> {
+    if (this.attemptedManagedImport) {
       return;
     }
 
-    const storageStatePath = getStorageStatePath();
-    await ensureConfigDir();
-    await this.context.storageState({ path: storageStatePath });
-
-    const cookies = await this.context.cookies();
-    await writeFile(getCookiesPath(), JSON.stringify(cookies, null, 2));
-  }
-
-  async close(): Promise<void> {
-    await this.page?.close().catch(() => {});
-    await this.context?.close().catch(() => {});
-    await this.browser?.close().catch(() => {});
-    this.page = null;
-    this.context = null;
-    this.browser = null;
+    this.attemptedManagedImport = true;
+    await importManagedBrowserSessionIfAvailable().catch(() => {});
   }
 }
 
@@ -851,6 +1059,43 @@ export async function clearStoredSession(): Promise<{ success: true; message: st
     cookiesPath: getCookiesPath(),
     storageStatePath: getStorageStatePath(),
   };
+}
+
+export async function setAddressDirect(address: string): Promise<SetAddressResult> {
+  const requestedAddress = address.trim();
+  if (!requestedAddress) {
+    throw new Error("Missing required address text.");
+  }
+
+  const availableAddresses = await getAvailableAddressesDirect();
+  const directMatch = resolveAvailableAddressMatch({
+    input: requestedAddress,
+    availableAddresses,
+  });
+  if (directMatch) {
+    return updateConsumerDefaultAddressDirect(requestedAddress, directMatch);
+  }
+
+  const autocomplete = await autocompleteAddressDirect(requestedAddress);
+  const prediction = autocomplete[0];
+  if (!prediction) {
+    throw new Error(`DoorDash returned no address predictions for "${requestedAddress}".`);
+  }
+
+  const createdAddress = await getOrCreateAddressDirect(prediction);
+  const autocompleteMatch = resolveAvailableAddressMatch({
+    input: requestedAddress,
+    availableAddresses,
+    prediction,
+    createdAddress,
+  });
+  if (!autocompleteMatch) {
+    throw new Error(
+      `Direct set-address currently supports only addresses already present in your DoorDash address book. DoorDash resolved "${requestedAddress}" via autocomplete/get-or-create, but it did not expose a saved defaultAddressId we could update safely.`,
+    );
+  }
+
+  return updateConsumerDefaultAddressDirect(requestedAddress, autocompleteMatch);
 }
 
 export async function searchRestaurantsDirect(query: string, cuisine?: string): Promise<SearchResult> {
@@ -921,16 +1166,17 @@ export async function addToCartDirect(params: {
   itemId?: string;
   quantity: number;
   specialInstructions?: string;
+  optionSelections?: RequestedOptionSelection[];
 }): Promise<AddToCartResult> {
   const { item, itemDetail } = await resolveMenuItem(params.restaurantId, params.itemId, params.itemName);
   const currentCart = await getCartDirect();
-  const auth = await checkAuthDirect();
 
   const payload = buildAddToCartPayload({
     restaurantId: params.restaurantId,
     cartId: currentCart.cartId ?? "",
     quantity: params.quantity,
     specialInstructions: params.specialInstructions ?? null,
+    optionSelections: params.optionSelections ?? [],
     item,
     itemDetail,
   });
@@ -996,6 +1242,7 @@ export function buildAddToCartPayload(input: {
   cartId: string;
   quantity: number;
   specialInstructions: string | null;
+  optionSelections?: RequestedOptionSelection[];
   item: MenuItemSummary;
   itemDetail: ItemResult;
 }): AddToCartPayload {
@@ -1004,16 +1251,14 @@ export function buildAddToCartPayload(input: {
     throw new Error("DoorDash item details were incomplete; cannot build a cart mutation safely.");
   }
 
-  if (input.itemDetail.item.requiredOptionLists.length > 0) {
-    const labels = input.itemDetail.item.requiredOptionLists.map((group) => `${group.name} (${group.minNumOptions}-${group.maxNumOptions})`);
-    throw new Error(
-      `Direct add-to-cart currently supports only quick-add items with no required option groups. Required groups: ${labels.join(", ")}`,
-    );
-  }
-
   if (!Number.isInteger(input.quantity) || input.quantity < 1) {
     throw new Error(`Invalid quantity: ${input.quantity}`);
   }
+
+  const nestedOptions = buildNestedOptionsPayload({
+    item: input.itemDetail.item,
+    selections: input.optionSelections ?? [],
+  });
 
   return {
     addCartItemInput: {
@@ -1024,7 +1269,7 @@ export function buildAddToCartPayload(input: {
       itemDescription: header.description,
       currency: header.currency,
       quantity: input.quantity,
-      nestedOptions: "[]",
+      nestedOptions: JSON.stringify(nestedOptions),
       specialInstructions: input.specialInstructions,
       substitutionPreference: "substitute",
       isBundle: false,
@@ -1077,6 +1322,404 @@ export function buildUpdateCartPayload(input: {
     },
     returnCartFromOrderService: false,
   };
+}
+
+export function parseOptionSelectionsJson(value: string): RequestedOptionSelection[] {
+  const parsed = safeJsonParse<unknown>(value);
+  if (!Array.isArray(parsed)) {
+    throw new Error("--options-json must be a JSON array of { groupId, optionId, quantity? } objects.");
+  }
+
+  return parsed.map((entry, index) => {
+    const object = asObject(entry);
+    const groupId = typeof object.groupId === "string" ? object.groupId.trim() : "";
+    const optionId = typeof object.optionId === "string" ? object.optionId.trim() : "";
+    const quantity = object.quantity == null ? undefined : Number.parseInt(String(object.quantity), 10);
+
+    if (!groupId || !optionId) {
+      throw new Error(`Invalid option selection at index ${index}. Each entry must include string groupId and optionId fields.`);
+    }
+    if (quantity !== undefined && (!Number.isInteger(quantity) || quantity < 1)) {
+      throw new Error(`Invalid option quantity at index ${index}: ${object.quantity}`);
+    }
+
+    return { groupId, optionId, ...(quantity === undefined ? {} : { quantity }) } satisfies RequestedOptionSelection;
+  });
+}
+
+function buildNestedOptionsPayload(input: {
+  item: ItemResult["item"];
+  selections: RequestedOptionSelection[];
+}): BuiltNestedOption[] {
+  const selections = normalizeRequestedOptionSelections(input.selections);
+  const optionLists = input.item.optionLists;
+  const requiredGroups = optionLists.filter((group) => group.minNumOptions > 0 && !group.isOptional);
+
+  if (selections.length === 0) {
+    if (requiredGroups.length === 0) {
+      return [];
+    }
+
+    const labels = requiredGroups.map((group) => `${group.name} (${group.minNumOptions}-${group.maxNumOptions})`);
+    throw new Error(
+      `This item has required option groups. Provide --options-json with validated groupId/optionId selections. Required groups: ${labels.join(", ")}`,
+    );
+  }
+
+  const groupsById = new Map(optionLists.map((group) => [group.id, group]));
+  const selectionsByGroup = new Map<string, Array<{ option: ItemOptionResult; quantity: number; group: ItemOptionListResult }>>();
+
+  for (const selection of selections) {
+    const group = groupsById.get(selection.groupId);
+    if (!group) {
+      throw new Error(`Unknown option group: ${selection.groupId}`);
+    }
+
+    const option = group.options.find((candidate) => candidate.id === selection.optionId);
+    if (!option) {
+      throw new Error(`Unknown option ${selection.optionId} for group ${group.name} (${group.id}).`);
+    }
+
+    if (option.nextCursor) {
+      throw new Error(
+        `Option ${option.name} (${option.id}) opens an additional nested configuration step. Nested cursor-driven option trees are not implemented safely yet, so the CLI refuses this payload.`,
+      );
+    }
+
+    const entries = selectionsByGroup.get(group.id) ?? [];
+    entries.push({ option, quantity: selection.quantity ?? 1, group });
+    selectionsByGroup.set(group.id, entries);
+  }
+
+  for (const group of optionLists) {
+    const selectedEntries = selectionsByGroup.get(group.id) ?? [];
+    const selectedCount = selectedEntries.reduce((sum, entry) => sum + entry.quantity, 0);
+
+    if (selectedCount < group.minNumOptions) {
+      throw new Error(`Missing required selections for ${group.name}. Need at least ${group.minNumOptions}.`);
+    }
+
+    if (group.maxNumOptions > 0 && selectedCount > group.maxNumOptions) {
+      throw new Error(`Too many selections for ${group.name}. Maximum is ${group.maxNumOptions}.`);
+    }
+  }
+
+  return optionLists.flatMap((group) => {
+    const selectedEntries = selectionsByGroup.get(group.id) ?? [];
+    return selectedEntries.map(({ option, quantity }) => ({
+      id: option.id,
+      quantity,
+      options: [],
+      itemExtraOption: {
+        id: option.id,
+        name: option.name,
+        description: option.name,
+        price: option.unitAmount ?? 0,
+        itemExtraName: null,
+        chargeAbove: 0,
+        defaultQuantity: option.defaultQuantity ?? 0,
+        itemExtraId: group.id,
+        itemExtraNumFreeOptions: group.numFreeOptions,
+        menuItemExtraOptionPrice: option.unitAmount ?? 0,
+        menuItemExtraOptionBasePrice: null,
+      },
+    } satisfies BuiltNestedOption));
+  });
+}
+
+function normalizeRequestedOptionSelections(selections: RequestedOptionSelection[]): RequestedOptionSelection[] {
+  const aggregated = new Map<string, RequestedOptionSelection>();
+
+  for (const selection of selections) {
+    const groupId = selection.groupId.trim();
+    const optionId = selection.optionId.trim();
+    const quantity = selection.quantity ?? 1;
+
+    if (!groupId || !optionId) {
+      throw new Error("Option selections must include non-empty groupId and optionId values.");
+    }
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new Error(`Invalid option quantity for ${groupId}/${optionId}: ${selection.quantity}`);
+    }
+
+    const key = `${groupId}:${optionId}`;
+    const previous = aggregated.get(key);
+    if (previous) {
+      aggregated.set(key, { ...previous, quantity: (previous.quantity ?? 1) + quantity });
+    } else {
+      aggregated.set(key, { groupId, optionId, quantity });
+    }
+  }
+
+  return [...aggregated.values()];
+}
+
+async function getAvailableAddressesDirect(): Promise<AvailableAddressGraph[]> {
+  const data = await session.graphql<{ getAvailableAddresses?: AvailableAddressGraph[] | null }>(
+    "getAvailableAddresses",
+    GET_AVAILABLE_ADDRESSES_QUERY,
+    {},
+  );
+  return Array.isArray(data.getAvailableAddresses) ? data.getAvailableAddresses : [];
+}
+
+async function autocompleteAddressDirect(inputAddress: string): Promise<AddressAutocompletePrediction[]> {
+  const params = new URLSearchParams({
+    input_address: inputAddress,
+    autocomplete_type: "AUTOCOMPLETE_TYPE_V2_UNSPECIFIED",
+  });
+  const response = await session.requestJson<AddressAutocompleteResponse>({
+    url: `${BASE_URL}/unified-gateway/geo-intelligence/v2/address/autocomplete?${params.toString()}`,
+    method: "GET",
+    headers: { accept: "application/json" },
+    operationName: "address autocomplete",
+  });
+  return Array.isArray(response.predictions) ? response.predictions : [];
+}
+
+async function getOrCreateAddressDirect(prediction: AddressAutocompletePrediction): Promise<GeoAddressResponse["address"]> {
+  const sourcePlaceId = prediction.source_place_id?.trim();
+  if (!sourcePlaceId) {
+    throw new Error("DoorDash autocomplete did not return a source_place_id for the selected address.");
+  }
+
+  const response = await session.requestJson<GeoAddressResponse>({
+    url: `${BASE_URL}/unified-gateway/geo-intelligence/v2/address/get-or-create`,
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      address_identifier: {
+        _type: "source_place_id_request",
+        source_place_id: sourcePlaceId,
+      },
+    }),
+    operationName: "address get-or-create",
+  });
+
+  return response.address ?? null;
+}
+
+async function updateConsumerDefaultAddressDirect(
+  requestedAddress: string,
+  match: { id: string; printableAddress: string | null; source: SetAddressResult["matchedAddressSource"] },
+): Promise<SetAddressResult> {
+  const data = await session.graphql<{ updateConsumerDefaultAddressV2?: UpdateConsumerDefaultAddressGraph | null }>(
+    "updateConsumerDefaultAddressV2",
+    UPDATE_CONSUMER_DEFAULT_ADDRESS_MUTATION,
+    { defaultAddressId: match.id },
+  );
+
+  await session.saveState();
+
+  return {
+    success: true,
+    mode: "direct-saved-address",
+    requestedAddress,
+    matchedAddressId: match.id,
+    matchedAddressSource: match.source,
+    printableAddress: data.updateConsumerDefaultAddressV2?.defaultAddress?.printableAddress ?? match.printableAddress ?? null,
+  };
+}
+
+export function resolveAvailableAddressMatch(input: {
+  input: string;
+  availableAddresses: AvailableAddressGraph[];
+  prediction?: AddressAutocompletePrediction | null;
+  createdAddress?: GeoAddressResponse["address"] | null;
+}): { id: string; printableAddress: string | null; source: SetAddressResult["matchedAddressSource"] } | null {
+  const addressIds = [input.prediction?.geo_address_id, input.createdAddress?.id]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+
+  for (const availableAddress of input.availableAddresses) {
+    const defaultAddressId = typeof availableAddress.id === "string" ? availableAddress.id.trim() : "";
+    if (!defaultAddressId) {
+      continue;
+    }
+
+    if (typeof availableAddress.addressId === "string" && addressIds.includes(availableAddress.addressId.trim())) {
+      return {
+        id: defaultAddressId,
+        printableAddress: availableAddress.printableAddress ?? null,
+        source: "autocomplete-address-id",
+      };
+    }
+  }
+
+  const normalizedCandidates = dedupeBy(
+    [
+      input.input,
+      input.prediction?.formatted_address ?? null,
+      input.prediction?.formatted_address_short ?? null,
+      input.createdAddress?.formatted_address ?? null,
+      input.createdAddress?.formatted_address_short ?? null,
+    ]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map(normalizeAddressText),
+    (value) => value,
+  );
+
+  for (const availableAddress of input.availableAddresses) {
+    const defaultAddressId = typeof availableAddress.id === "string" ? availableAddress.id.trim() : "";
+    if (!defaultAddressId) {
+      continue;
+    }
+
+    const printableAddress = normalizeAddressText(availableAddress.printableAddress ?? "");
+    const shortname = normalizeAddressText(availableAddress.shortname ?? "");
+    const matchesText = normalizedCandidates.some(
+      (candidate) =>
+        candidate === printableAddress ||
+        candidate === shortname ||
+        (shortname.length > 0 && candidate.includes(shortname)) ||
+        (printableAddress.length > 0 && printableAddress.includes(candidate)),
+    );
+    if (matchesText) {
+      return {
+        id: defaultAddressId,
+        printableAddress: availableAddress.printableAddress ?? null,
+        source: input.prediction || input.createdAddress ? "autocomplete-text" : "saved-address",
+      };
+    }
+  }
+
+  return null;
+}
+
+function normalizeAddressText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[.,]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+async function importManagedBrowserSessionIfAvailable(): Promise<boolean> {
+  for (const cdpUrl of await getManagedBrowserCdpCandidates()) {
+    if (!(await isCdpEndpointReachable(cdpUrl))) {
+      continue;
+    }
+
+    let browser: Browser | null = null;
+    let tempPage: Page | null = null;
+    try {
+      browser = await chromium.connectOverCDP(cdpUrl);
+      const context = browser.contexts()[0];
+      if (!context) {
+        continue;
+      }
+
+      let page = context.pages().find((candidate) => candidate.url().includes("doordash.com")) ?? null;
+      if (!page) {
+        tempPage = await context.newPage();
+        page = tempPage;
+        await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+        await page.waitForTimeout(1_000);
+      }
+
+      const consumerData = await fetchConsumerViaPage(page);
+      const consumer = consumerData.consumer ?? null;
+      if (!consumer || consumer.isGuest !== false) {
+        continue;
+      }
+
+      await saveContextState(context);
+      return true;
+    } catch {
+      continue;
+    } finally {
+      await tempPage?.close().catch(() => {});
+      await browser?.close().catch(() => {});
+    }
+  }
+
+  return false;
+}
+
+async function fetchConsumerViaPage(page: Page): Promise<{ consumer: ConsumerGraph | null }> {
+  const raw = await page.evaluate(
+    async ({ query, headers, url }) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ operationName: "consumer", variables: {}, query }),
+      });
+      return { status: response.status, text: await response.text() };
+    },
+    {
+      query: CONSUMER_QUERY,
+      headers: GRAPHQL_HEADERS,
+      url: `${BASE_URL}/graphql/consumer?operation=consumer`,
+    },
+  );
+
+  return parseGraphQlResponse<{ consumer: ConsumerGraph | null }>("managedBrowserConsumerImport", raw.status, raw.text);
+}
+
+async function saveContextState(context: BrowserContext): Promise<void> {
+  const storageStatePath = getStorageStatePath();
+  await ensureConfigDir();
+  await context.storageState({ path: storageStatePath });
+
+  const cookies = await context.cookies();
+  await writeFile(getCookiesPath(), JSON.stringify(cookies, null, 2));
+}
+
+async function getManagedBrowserCdpCandidates(): Promise<string[]> {
+  const candidates = new Set<string>();
+  for (const value of [
+    process.env.DOORDASH_MANAGED_BROWSER_CDP_URL,
+    process.env.OPENCLAW_BROWSER_CDP_URL,
+    process.env.OPENCLAW_OPENCLAW_CDP_URL,
+  ]) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      candidates.add(value.trim().replace(/\/$/, ""));
+    }
+  }
+
+  for (const value of await readOpenClawBrowserConfigCandidates()) {
+    candidates.add(value.replace(/\/$/, ""));
+  }
+
+  candidates.add("http://127.0.0.1:18800");
+  return [...candidates];
+}
+
+async function readOpenClawBrowserConfigCandidates(): Promise<string[]> {
+  try {
+    const raw = await readFile(join(homedir(), ".openclaw", "openclaw.json"), "utf8");
+    const parsed = safeJsonParse<Record<string, unknown>>(raw);
+    const browserConfig = asObject(parsed?.browser);
+    const candidates: string[] = [];
+
+    const pushCandidate = (value: unknown) => {
+      const object = asObject(value);
+      if (typeof object.cdpUrl === "string" && object.cdpUrl.trim()) {
+        candidates.push(object.cdpUrl.trim());
+      } else if (typeof object.cdpPort === "number" && Number.isInteger(object.cdpPort)) {
+        candidates.push(`http://127.0.0.1:${object.cdpPort}`);
+      }
+    };
+
+    pushCandidate(browserConfig);
+    pushCandidate(browserConfig.openclaw);
+    pushCandidate(asObject(browserConfig.profiles).openclaw);
+    return dedupeBy(candidates, (value) => value);
+  } catch {
+    return [];
+  }
+}
+
+async function isCdpEndpointReachable(cdpUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${cdpUrl.replace(/\/$/, "")}/json/version`);
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function parseSearchRestaurants(body: unknown[]): SearchRestaurantResult[] {

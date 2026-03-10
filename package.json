@@ -1,13 +1,13 @@
 {
-  "name": "doordash-cart-cli",
+  "name": "doordash-cli",
   "version": "0.1.0",
-  "description": "Cart-safe local DoorDash CLI for search, menu, and cart actions only.",
+  "description": "Cart-safe DoorDash CLI with direct API support for browse and cart workflows.",
   "type": "module",
   "private": true,
   "main": "dist/lib.js",
   "bin": {
-    "dd-cart": "dist/cli.js",
-    "doordash-cart": "dist/cli.js"
+    "dd-cli": "dist/cli.js",
+    "doordash-cli": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -29,12 +29,12 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/seans-openclawbot/doordash-cart-cli.git"
+    "url": "git+https://github.com/seans-openclawbot/doordash-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/seans-openclawbot/doordash-cart-cli/issues"
+    "url": "https://github.com/seans-openclawbot/doordash-cli/issues"
   },
-  "homepage": "https://github.com/seans-openclawbot/doordash-cart-cli#readme",
+  "homepage": "https://github.com/seans-openclawbot/doordash-cli#readme",
   "dependencies": {
     "@striderlabs/mcp-doordash": "^0.1.2",
     "playwright": "^1.41.0"

@@ -5,24 +5,25 @@ import { SAFE_COMMANDS, assertSafeCommand, runCommand, shutdown } from "./lib.js
 
 export function usage(): string {
   return [
-    "doordash-cart <command> [flags]",
+    "doordash-cli <command> [flags]",
     "",
     "Safe commands:",
     "  auth-check",
     "  auth-bootstrap",
     "  auth-clear",
-    '  set-address --address "123 Main St, City, ST ZIP"   (browser-assisted fallback)',
+    '  set-address --address "350 5th Ave, New York, NY 10118"',
     "  search --query sushi [--cuisine japanese]",
     "  menu --restaurant-id 123456",
     "  item --restaurant-id 123456 --item-id 7890",
-    '  add-to-cart --restaurant-id 123456 (--item-id 7890 | --item-name "Spicy Tuna Roll") [--quantity 2] [--special-instructions "no wasabi"]',
+    '  add-to-cart --restaurant-id 123456 (--item-id 7890 | --item-name "Spicy Tuna Roll") [--quantity 2] [--special-instructions "no wasabi"] [--options-json "[{\"groupId\":\"703393388\",\"optionId\":\"4716032529\"}]"]',
     "  update-cart --cart-item-id abc123 --quantity 2",
     "  cart",
     "",
     "Notes:",
-    "  - Direct GraphQL/HTTP is the default path for auth-check, search, menu, item, cart, add-to-cart, and update-cart.",
-    "  - auth-bootstrap opens a browser once so you can sign in manually and save a reusable session/state for direct API use.",
-    "  - add-to-cart currently supports only quick-add items with no required option groups.",
+    "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, cart, add-to-cart, and update-cart.",
+    "  - auth-check automatically imports a signed-in OpenClaw managed-browser DoorDash session when one is available.",
+    "  - set-address currently persists only addresses already present in your DoorDash address book; brand-new address enrollment still fails closed.",
+    "  - configurable items require explicit --options-json selections and fail closed on nested cursor-driven option trees.",
     "",
     "Dangerous commands are intentionally unsupported:",
     "  checkout, place-order, track-order, payment actions",
@@ -96,7 +97,7 @@ async function main(): Promise<void> {
   try {
     const result = await runCommand(command, flags);
     console.log(JSON.stringify(result, null, 2));
-    process.exitCode = result.success === false ? 1 : 0;
+    process.exitCode = 0;
   } finally {
     await shutdown();
   }

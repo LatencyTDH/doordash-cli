@@ -1,4 +1,4 @@
-# doordash-cart-cli
+# doordash-cli
 
 Local DoorDash CLI with a deliberately small, cart-safe command surface.
 
@@ -32,12 +32,13 @@ The CLI enforces this in code, not just docs:
 
 ## Direct API approach
 
-The primary path is now DoorDash consumer-web GraphQL/HTTP, not DOM clicking:
+The primary path is DoorDash consumer-web GraphQL/HTTP, not DOM clicking:
 
-- `auth-check`, `search`, `menu`, `item`, `cart`, `add-to-cart`, and `update-cart` use direct request builders + parsers
+- `auth-check`, `set-address`, `search`, `menu`, `item`, `cart`, `add-to-cart`, and `update-cart` use direct request builders + parsers
 - browser usage is limited to:
   - one-time manual session bootstrap via `auth-bootstrap`
-  - the still-fallback `set-address` flow
+  - automatic session import from an already-open signed-in OpenClaw managed browser
+  - protocol research / recovery when DoorDash changes behavior
 
 This keeps the core integration focused on stable request/response shapes instead of fragile page selectors.
 
@@ -68,27 +69,25 @@ node dist/cli.js --help
 Or after `npm link`:
 
 ```bash
-dd-cart --help
-doordash-cart --help
+dd-cli --help
+doordash-cli --help
 ```
-
-`dd-cart` is used instead of bare `dd` so the package does not collide with the Unix `dd` utility.
 
 Examples:
 
 ```bash
-dd-cart auth-check
-dd-cart auth-bootstrap
-dd-cart auth-clear
-dd-cart set-address --address "123 Main St, New York, NY 10001"
-dd-cart search --query sushi
-dd-cart search --query tacos --cuisine mexican
-dd-cart menu --restaurant-id 1721744
-dd-cart item --restaurant-id 1721744 --item-id 546936015
-dd-cart add-to-cart --restaurant-id 1721744 --item-id 876658890 --quantity 2
-dd-cart add-to-cart --restaurant-id 1721744 --item-name "Sushi premium"
-dd-cart update-cart --cart-item-id 3b231d03-5a72-4636-8d12-c8769d706d45 --quantity 1
-dd-cart cart
+dd-cli auth-check
+dd-cli auth-bootstrap
+dd-cli auth-clear
+dd-cli set-address --address "350 5th Ave, New York, NY 10118"
+dd-cli search --query sushi
+dd-cli search --query tacos --cuisine mexican
+dd-cli menu --restaurant-id 1721744
+dd-cli item --restaurant-id 1721744 --item-id 546936015
+dd-cli add-to-cart --restaurant-id 1721744 --item-id 876658890 --quantity 2
+dd-cli add-to-cart --restaurant-id 1721744 --item-id 546936015 --options-json '[{"groupId":"703393388","optionId":"4716032529"},{"groupId":"703393389","optionId":"4716042466"}]'
+dd-cli update-cart --cart-item-id 3b231d03-5a72-4636-8d12-c8769d706d45 --quantity 1
+dd-cli cart
 ```
 
 Output is JSON so it can be scripted easily.
@@ -100,12 +99,24 @@ The CLI keeps session material under the same config root as the upstream projec
 - cookies: `~/.config/striderlabs-mcp-doordash/cookies.json`
 - direct-session browser state: `~/.config/striderlabs-mcp-doordash/storage-state.json`
 
+### Managed-browser auto-import
+
+If an OpenClaw-managed browser is already running with a signed-in DoorDash tab/session, `auth-check` and other direct commands automatically try to import that state into the saved direct-session files before launching a new local browser context.
+
+Default probe order:
+
+- `DOORDASH_MANAGED_BROWSER_CDP_URL`
+- `OPENCLAW_BROWSER_CDP_URL`
+- `OPENCLAW_OPENCLAW_CDP_URL`
+- OpenClaw config hints from `~/.openclaw/openclaw.json`
+- fallback default `http://127.0.0.1:18800`
+
 ### Recommended bootstrap
 
-Use `auth-bootstrap` once when you need a fresh reusable session:
+Use `auth-bootstrap` once when you need a fresh reusable session and there is no already-open signed-in managed browser to import:
 
 ```bash
-dd-cart auth-bootstrap
+dd-cli auth-bootstrap
 ```
 
 That opens Chromium, lets you sign in manually, then saves the browser state for later direct API calls.
@@ -119,24 +130,51 @@ That opens Chromium, lets you sign in manually, then saves the browser state for
 ### Implemented direct support
 
 - auth/session check
+- managed-browser session import into saved direct-session state
 - search
 - menu fetch
 - item detail fetch
 - cart read
-- add-to-cart for quick-add items with **no required option groups**
+- add-to-cart for quick-add items
+- add-to-cart for configurable items **when explicit `--options-json` selections are provided and all selected options are validated against item/menu data**
 - update-cart by cart item id
+- direct default-address persistence **for addresses already present in the account's DoorDash address book**
 
 ### Not implemented / intentionally limited
 
 - checkout / order placement / tracking / payment
-- direct address persistence write
-- arbitrary item-option selection for complex items
+- auto-enrolling a brand-new address into the DoorDash address book from freeform text
+- nested cursor-driven option trees (options that open another configuration step)
 
-If an item has required option groups, `add-to-cart` fails closed with a clear message instead of guessing selections.
+If the CLI cannot prove a payload safely from known item/address data, it fails closed with a clear message instead of guessing.
 
 ## `set-address` note
 
-`set-address` is still the exception: it remains browser-assisted. I did **not** switch it to a direct persistence write because the persistence path was not isolated cleanly enough yet.
+`set-address` is now direct for saved addresses:
+
+- the CLI looks for a match in `getAvailableAddresses`
+- if needed, it uses autocomplete + geo `get-or-create` to resolve the input
+- it then calls `updateConsumerDefaultAddressV2(defaultAddressId)` when DoorDash exposes a matching saved address
+
+If DoorDash resolves the text but does **not** expose a saved `defaultAddressId`, the CLI refuses to guess the consumer-address enrollment mutation and exits with a blocker message.
+
+## Configurable items note
+
+For items with required option groups, pass `--options-json` as a JSON array of selection objects:
+
+```json
+[
+  { "groupId": "703393388", "optionId": "4716032529" },
+  { "groupId": "703393389", "optionId": "4716042466" }
+]
+```
+
+Guardrails:
+
+- unknown group IDs are rejected
+- unknown option IDs are rejected
+- min/max group counts are enforced
+- options with `nextCursor` are rejected because they open a nested configuration step the CLI has not safely implemented yet
 
 ## Security caveats
 
@@ -169,7 +207,7 @@ Expected behavior:
 
 ## Implementation notes
 
-- Direct request builders, parsers, and browser-backed session transport live in `src/direct-api.ts`
+- Direct request builders, parsers, managed-browser import, and address/configurable-item helpers live in `src/direct-api.ts`
 - Safe command allowlist and command dispatch live in `src/lib.ts`
 - CLI parsing/output lives in `src/cli.ts`
-- Tests cover both allowlist guardrails and direct request-shape helpers
+- Tests cover allowlist guardrails plus direct request-building and parsing helpers

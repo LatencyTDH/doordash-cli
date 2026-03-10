@@ -4,8 +4,112 @@ import {
   buildAddToCartPayload,
   buildUpdateCartPayload,
   normalizeItemName,
+  parseOptionSelectionsJson,
   parseSearchRestaurantRow,
+  resolveAvailableAddressMatch,
+  type ItemResult,
 } from "./direct-api.js";
+
+function configurableItemDetail(): ItemResult {
+  return {
+    success: true,
+    restaurantId: "1721744",
+    item: {
+      id: "546936015",
+      name: "Two roll selection",
+      description: "Spicy tuna, salmon avo, eel cuc, yellowtail scallion, California Roll.",
+      displayPrice: "+$18.98",
+      unitAmount: 1898,
+      currency: "USD",
+      decimalPlaces: 2,
+      menuId: "2181443",
+      specialInstructionsMaxLength: 500,
+      dietaryTags: [],
+      reviewData: null,
+      requiredOptionLists: [
+        {
+          id: "703393388",
+          name: "1st Roll Choice",
+          subtitle: "Select 1",
+          minNumOptions: 1,
+          maxNumOptions: 1,
+          numFreeOptions: 0,
+          isOptional: false,
+          options: [
+            {
+              id: "4716032529",
+              name: "California Roll",
+              displayPrice: "",
+              unitAmount: 0,
+              defaultQuantity: 0,
+              nextCursor: null,
+            },
+          ],
+        },
+        {
+          id: "703393389",
+          name: "2nd Roll Choice",
+          subtitle: "Select 1",
+          minNumOptions: 1,
+          maxNumOptions: 1,
+          numFreeOptions: 0,
+          isOptional: false,
+          options: [
+            {
+              id: "4716042466",
+              name: "California Roll",
+              displayPrice: "",
+              unitAmount: 0,
+              defaultQuantity: 0,
+              nextCursor: null,
+            },
+          ],
+        },
+      ],
+      optionLists: [
+        {
+          id: "703393388",
+          name: "1st Roll Choice",
+          subtitle: "Select 1",
+          minNumOptions: 1,
+          maxNumOptions: 1,
+          numFreeOptions: 0,
+          isOptional: false,
+          options: [
+            {
+              id: "4716032529",
+              name: "California Roll",
+              displayPrice: "",
+              unitAmount: 0,
+              defaultQuantity: 0,
+              nextCursor: null,
+            },
+          ],
+        },
+        {
+          id: "703393389",
+          name: "2nd Roll Choice",
+          subtitle: "Select 1",
+          minNumOptions: 1,
+          maxNumOptions: 1,
+          numFreeOptions: 0,
+          isOptional: false,
+          options: [
+            {
+              id: "4716042466",
+              name: "California Roll",
+              displayPrice: "",
+              unitAmount: 0,
+              defaultQuantity: 0,
+              nextCursor: null,
+            },
+          ],
+        },
+      ],
+      preferences: [],
+    },
+  };
+}
 
 test("normalizeItemName trims and collapses whitespace", () => {
   assert.equal(normalizeItemName("  Sushi   premium "), "sushi premium");
@@ -53,7 +157,74 @@ test("parseSearchRestaurantRow extracts restaurant metadata from facet rows", ()
   });
 });
 
-test("buildAddToCartPayload blocks items with required option groups", () => {
+test("parseOptionSelectionsJson parses structured option selections", () => {
+  assert.deepEqual(
+    parseOptionSelectionsJson('[{"groupId":"703393388","optionId":"4716032529"},{"groupId":"703393389","optionId":"4716042466","quantity":2}]'),
+    [
+      { groupId: "703393388", optionId: "4716032529" },
+      { groupId: "703393389", optionId: "4716042466", quantity: 2 },
+    ],
+  );
+});
+
+test("parseOptionSelectionsJson rejects malformed payloads", () => {
+  assert.throws(() => parseOptionSelectionsJson('{"groupId":"x"}'), /must be a JSON array/);
+  assert.throws(() => parseOptionSelectionsJson('[{"groupId":"703393388"}]'), /must include string groupId and optionId/);
+  assert.throws(
+    () => parseOptionSelectionsJson('[{"groupId":"703393388","optionId":"4716032529","quantity":0}]'),
+    /Invalid option quantity/,
+  );
+});
+
+test("resolveAvailableAddressMatch prefers a saved address id from autocomplete/get-or-create", () => {
+  const match = resolveAvailableAddressMatch({
+    input: "350 5th Ave, New York, NY 10118",
+    availableAddresses: [
+      {
+        id: "5266870966",
+        addressId: "1387447699",
+        printableAddress: "350 5th Ave, New York, NY 10118, USA",
+        shortname: "350 5th Ave",
+      },
+    ],
+    prediction: {
+      geo_address_id: "1387447699",
+      formatted_address: "350 5th Ave, New York, NY 10118, USA",
+    },
+    createdAddress: {
+      id: "1387447699",
+      formatted_address: "350 5th Ave, New York, NY 10118, USA",
+    },
+  });
+
+  assert.deepEqual(match, {
+    id: "5266870966",
+    printableAddress: "350 5th Ave, New York, NY 10118, USA",
+    source: "autocomplete-address-id",
+  });
+});
+
+test("resolveAvailableAddressMatch falls back to printable/shortname text matching", () => {
+  const match = resolveAvailableAddressMatch({
+    input: "350 5th Ave, New York, NY 10118",
+    availableAddresses: [
+      {
+        id: "5266870966",
+        addressId: "1387447699",
+        printableAddress: "350 5th Ave, New York, NY 10118, USA",
+        shortname: "350 5th Ave",
+      },
+    ],
+  });
+
+  assert.deepEqual(match, {
+    id: "5266870966",
+    printableAddress: "350 5th Ave, New York, NY 10118, USA",
+    source: "saved-address",
+  });
+});
+
+test("buildAddToCartPayload blocks required-option items when no selections are provided", () => {
   assert.throws(
     () =>
       buildAddToCartPayload({
@@ -61,6 +232,7 @@ test("buildAddToCartPayload blocks items with required option groups", () => {
         cartId: "",
         quantity: 1,
         specialInstructions: null,
+        optionSelections: [],
         item: {
           id: "546936015",
           name: "Two roll selection",
@@ -70,39 +242,9 @@ test("buildAddToCartPayload blocks items with required option groups", () => {
           nextCursor: null,
           storeId: "1721744",
         },
-        itemDetail: {
-          success: true,
-          restaurantId: "1721744",
-          item: {
-            id: "546936015",
-            name: "Two roll selection",
-            description: "Spicy tuna, salmon avo",
-            displayPrice: "$18.98",
-            unitAmount: 1898,
-            currency: "USD",
-            decimalPlaces: 2,
-            menuId: "2181443",
-            specialInstructionsMaxLength: 500,
-            dietaryTags: [],
-            reviewData: null,
-            requiredOptionLists: [
-              {
-                id: "703393388",
-                name: "1st Roll Choice",
-                subtitle: "Select 1",
-                minNumOptions: 1,
-                maxNumOptions: 1,
-                numFreeOptions: 0,
-                isOptional: false,
-                options: [],
-              },
-            ],
-            optionLists: [],
-            preferences: [],
-          },
-        },
+        itemDetail: configurableItemDetail(),
       }),
-    /quick-add items with no required option groups/,
+    /required option groups/,
   );
 });
 
@@ -112,6 +254,7 @@ test("buildAddToCartPayload preserves the captured DoorDash request shape for qu
     cartId: "90a554a1-cc69-462b-8860-911ddf2d7f88",
     quantity: 2,
     specialInstructions: "extra napkins",
+    optionSelections: [],
     item: {
       id: "876658890",
       name: " Sushi premium",
@@ -173,6 +316,100 @@ test("buildAddToCartPayload preserves the captured DoorDash request shape for qu
     returnCartFromOrderService: false,
     shouldKeepOnlyOneActiveCart: false,
   });
+});
+
+test("buildAddToCartPayload builds validated nestedOptions for configurable items", () => {
+  const payload = buildAddToCartPayload({
+    restaurantId: "1721744",
+    cartId: "90a554a1-cc69-462b-8860-911ddf2d7f88",
+    quantity: 1,
+    specialInstructions: null,
+    optionSelections: [
+      { groupId: "703393388", optionId: "4716032529" },
+      { groupId: "703393389", optionId: "4716042466" },
+    ],
+    item: {
+      id: "546936015",
+      name: "Two roll selection",
+      description: "Spicy tuna, salmon avo, eel cuc, yellowtail scallion, California Roll.",
+      displayPrice: "$18.98",
+      imageUrl: null,
+      nextCursor: null,
+      storeId: "1721744",
+    },
+    itemDetail: configurableItemDetail(),
+  });
+
+  assert.deepEqual(JSON.parse(payload.addCartItemInput.nestedOptions), [
+    {
+      id: "4716032529",
+      quantity: 1,
+      options: [],
+      itemExtraOption: {
+        id: "4716032529",
+        name: "California Roll",
+        description: "California Roll",
+        price: 0,
+        itemExtraName: null,
+        chargeAbove: 0,
+        defaultQuantity: 0,
+        itemExtraId: "703393388",
+        itemExtraNumFreeOptions: 0,
+        menuItemExtraOptionPrice: 0,
+        menuItemExtraOptionBasePrice: null,
+      },
+    },
+    {
+      id: "4716042466",
+      quantity: 1,
+      options: [],
+      itemExtraOption: {
+        id: "4716042466",
+        name: "California Roll",
+        description: "California Roll",
+        price: 0,
+        itemExtraName: null,
+        chargeAbove: 0,
+        defaultQuantity: 0,
+        itemExtraId: "703393389",
+        itemExtraNumFreeOptions: 0,
+        menuItemExtraOptionPrice: 0,
+        menuItemExtraOptionBasePrice: null,
+      },
+    },
+  ]);
+});
+
+test("buildAddToCartPayload rejects selected options that open nested cursor-driven trees", () => {
+  const detail = configurableItemDetail();
+  const nestedOption = detail.item.optionLists[1]?.options[0];
+  assert.ok(nestedOption);
+  nestedOption.nextCursor = "opaque-next-cursor";
+
+  assert.throws(
+    () =>
+      buildAddToCartPayload({
+        restaurantId: "1721744",
+        cartId: "90a554a1-cc69-462b-8860-911ddf2d7f88",
+        quantity: 1,
+        specialInstructions: null,
+        optionSelections: [
+          { groupId: "703393388", optionId: "4716032529" },
+          { groupId: "703393389", optionId: "4716042466" },
+        ],
+        item: {
+          id: "546936015",
+          name: "Two roll selection",
+          description: "Spicy tuna, salmon avo, eel cuc, yellowtail scallion, California Roll.",
+          displayPrice: "$18.98",
+          imageUrl: null,
+          nextCursor: null,
+          storeId: "1721744",
+        },
+        itemDetail: detail,
+      }),
+    /nested configuration step/,
+  );
 });
 
 test("buildUpdateCartPayload preserves the captured DoorDash request shape", () => {

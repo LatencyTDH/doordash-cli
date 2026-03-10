@@ -54,9 +54,10 @@ test("argument parsing supports inline and spaced flags", () => {
 test("help output shows the direct cart-safe command surface", () => {
   const result = runCli(["--help"]);
   assert.equal(result.status, 0);
+  assert.match(result.stdout, /doordash-cli <command>/);
   assert.match(result.stdout, /auth-bootstrap/);
-  assert.match(result.stdout, /item --restaurant-id/);
-  assert.match(result.stdout, /update-cart/);
+  assert.match(result.stdout, /set-address --address/);
+  assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /Dangerous commands are intentionally unsupported/);
 });
 
