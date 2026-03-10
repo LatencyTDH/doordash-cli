@@ -1,8 +1,10 @@
 # doordash-cart-cli
 
-Minimal local DoorDash CLI with a strict cart-safe surface.
+Local DoorDash CLI with a deliberately small, cart-safe command surface.
 
-## What it supports
+## Safety model
+
+This project is intentionally limited to browsing and cart management:
 
 - `auth-check`
 - `auth-clear`
@@ -12,20 +14,22 @@ Minimal local DoorDash CLI with a strict cart-safe surface.
 - `add-to-cart`
 - `cart`
 
-## What it intentionally does **not** support
+It does **not** expose or call:
 
 - checkout
-- placing orders
-- order tracking
+- place-order
+- track-order
 - payment actions
 
-The CLI hard-rejects unknown or dangerous command names before calling any DoorDash automation code.
+The CLI enforces this in code, not just docs:
 
-## Why this design
+- only allowlisted commands are accepted
+- known dangerous commands return a hard failure immediately
+- unknown flags are rejected before any DoorDash browser automation runs
 
-`@striderlabs/mcp-doordash` already contains workable Playwright automation for DoorDash browsing and cart actions, but its published MCP server also exposes checkout and tracking tools. Instead of running that server directly, this project imports only the safe browser/auth helpers and wraps them in a tiny local CLI with an allowlist.
+## Why this exists
 
-That gives a stronger safety guarantee than just hiding dangerous commands in help text.
+`@striderlabs/mcp-doordash` contains useful Playwright automation for browsing DoorDash and managing cart state, but its broader server surface also includes order-placement and tracking functions. This wrapper reuses only the safe pieces and keeps the interface local and constrained.
 
 ## Install
 
@@ -37,7 +41,7 @@ npm run build
 npm link
 ```
 
-If Playwright asks for browser binaries, install them:
+If Playwright asks for browser binaries, install Chromium:
 
 ```bash
 npx playwright install chromium
@@ -45,19 +49,34 @@ npx playwright install chromium
 
 ## Usage
 
+You can run the compiled CLI directly:
+
 ```bash
-dd auth-check
-dd auth-clear
-dd set-address --address "123 Main St, New York, NY 10001"
-dd search --query sushi
-dd search --query tacos --cuisine mexican
-dd menu --restaurant-id 123456
-dd add-to-cart --restaurant-id 123456 --item-name "Burrito" --quantity 2
-dd add-to-cart --restaurant-id 123456 --item-name "Fries" --special-instructions "extra crispy"
-dd cart
+node dist/cli.js --help
 ```
 
-Output is JSON so it is easy to script.
+Or after `npm link`, use one of the installed commands:
+
+```bash
+dd-cart --help
+doordash-cart --help
+```
+
+Examples:
+
+```bash
+dd-cart auth-check
+dd-cart auth-clear
+dd-cart set-address --address "123 Main St, New York, NY 10001"
+dd-cart search --query sushi
+dd-cart search --query tacos --cuisine mexican
+dd-cart menu --restaurant-id 123456
+dd-cart add-to-cart --restaurant-id 123456 --item-name "Burrito" --quantity 2
+dd-cart add-to-cart --restaurant-id 123456 --item-name "Fries" --special-instructions "extra crispy"
+dd-cart cart
+```
+
+Output is JSON so it can be scripted easily.
 
 ## Authentication / session notes
 
@@ -65,16 +84,42 @@ This wrapper reuses the upstream cookie location:
 
 - `~/.config/striderlabs-mcp-doordash/cookies.json`
 
-`dd auth-check` tells you whether usable cookies appear to be present. This project does **not** automate login or checkout. If you need a valid DoorDash session, do it manually and carefully.
+`auth-check` tells you whether usable cookies appear to be present. This project does **not** automate login or checkout. If you need a valid DoorDash session, log in manually and manage cookies carefully.
 
-## Security note
+## Security caveats
 
-This is browser/session automation around the DoorDash website, not an official DoorDash consumer API. DoorDash can change page structure, flows, or account checks at any time, which may break automation. Use cautiously and review behavior before trusting it.
+- This is browser automation against the DoorDash website, not an official DoorDash consumer API.
+- DoorDash can change flows, markup, or anti-automation checks at any time.
+- Review results before trusting them for anything important.
+- Because this is intentionally cart-safe, actually placing an order still requires a manual step outside this CLI.
 
-## Implementation details
+## Development
 
-- Safe command allowlist lives in `src/lib.ts`
-- CLI argument parsing and rejection of non-allowlisted commands lives in `src/cli.ts`
+Validation commands:
+
+```bash
+npm run typecheck
+npm run build
+npm test
+node dist/cli.js --help
+node dist/cli.js checkout
+node dist/cli.js cart --payment-method visa
+```
+
+Expected behavior:
+
+- typecheck passes
+- build passes
+- tests pass
+- help shows only the safe command surface
+- `checkout` fails immediately as blocked
+- unknown flags fail before any browser automation runs
+
+## Implementation notes
+
+- Safe command allowlist and flag validation live in `src/lib.ts`
+- CLI argument parsing and output handling live in `src/cli.ts`
+- Tests in `src/cli.test.ts` cover both allowlist logic and CLI guardrails
 - Reused upstream functions:
   - `checkAuth`
   - `setAddress`
@@ -82,26 +127,6 @@ This is browser/session automation around the DoorDash website, not an official 
   - `getMenu`
   - `addToCart`
   - `getCart`
-- Not imported or exposed:
+- Intentionally not imported or exposed:
   - `placeOrder`
   - `trackOrder`
-
-## Validation
-
-Run:
-
-```bash
-npm run typecheck
-npm run build
-node --test dist/cli.test.js
-node dist/cli.js help
-node dist/cli.js checkout
-```
-
-Expected:
-- typecheck passes
-- build passes
-- tests pass
-- help shows only safe commands
-- `checkout` fails immediately as an unsupported/dangerous command
-```

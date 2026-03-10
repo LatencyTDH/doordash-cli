@@ -1,21 +1,39 @@
 {
   "name": "doordash-cart-cli",
   "version": "0.1.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "node --test",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "description": "Cart-safe local DoorDash CLI for search, menu, and cart actions only.",
   "type": "module",
-  "private": "true",
+  "private": true,
+  "main": "dist/lib.js",
   "bin": {
-    "dd": "dist/cli.js"
+    "dd-cart": "dist/cli.js",
+    "doordash-cart": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/*.test.js"
+  },
+  "keywords": [
+    "doordash",
+    "cli",
+    "playwright",
+    "cart-safe"
+  ],
+  "author": "OpenClaw",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seans-openclawbot/doordash-cart-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/seans-openclawbot/doordash-cart-cli/issues"
+  },
+  "homepage": "https://github.com/seans-openclawbot/doordash-cart-cli#readme",
   "dependencies": {
     "@striderlabs/mcp-doordash": "^0.1.2",
     "playwright": "^1.41.0"

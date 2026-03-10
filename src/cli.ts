@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 import { SAFE_COMMANDS, assertSafeCommand, runCommand, shutdown } from "./lib.js";
 
-function usage(): string {
+export function usage(): string {
   return [
-    "dd <command> [flags]",
+    "doordash-cart <command> [flags]",
     "",
     "Safe commands:",
     "  auth-check",
     "  auth-clear",
-    "  set-address --address \"123 Main St, City, ST ZIP\"",
+    '  set-address --address "123 Main St, City, ST ZIP"',
     "  search --query sushi [--cuisine japanese]",
     "  menu --restaurant-id 123456",
-    "  add-to-cart --restaurant-id 123456 --item-name \"Spicy Tuna Roll\" [--quantity 2] [--special-instructions \"no wasabi\"]",
+    '  add-to-cart --restaurant-id 123456 --item-name "Spicy Tuna Roll" [--quantity 2] [--special-instructions "no wasabi"]',
     "  cart",
     "",
     "Dangerous commands are intentionally unsupported:",
@@ -21,24 +21,51 @@ function usage(): string {
   ].join("\n");
 }
 
-function parseArgv(argv: string[]): { command?: string; flags: Record<string, string> } {
-  const [command, ...rest] = argv;
+export function parseArgv(argv: string[]): { command?: string; flags: Record<string, string> } {
+  const tokens = [...argv];
   const flags: Record<string, string> = {};
 
-  for (let i = 0; i < rest.length; i += 1) {
-    const token = rest[i];
+  let command: string | undefined;
+  if (tokens[0] !== undefined && !tokens[0].startsWith("-")) {
+    command = tokens.shift();
+  }
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (token === undefined) {
+      throw new Error("Unexpected empty argument");
+    }
+
+    if (token === "-h" || token === "--help") {
+      flags.help = "true";
+      continue;
+    }
+
     if (!token.startsWith("--")) {
       throw new Error(`Unexpected positional argument: ${token}`);
     }
+
+    const inlineEquals = token.indexOf("=");
+    if (inlineEquals !== -1) {
+      const key = token.slice(2, inlineEquals);
+      if (!key) {
+        throw new Error("Empty flag name");
+      }
+      flags[key] = token.slice(inlineEquals + 1);
+      continue;
+    }
+
     const key = token.slice(2);
     if (!key) {
       throw new Error("Empty flag name");
     }
-    const next = rest[i + 1];
-    if (!next || next.startsWith("--")) {
+
+    const next = tokens[i + 1];
+    if (next === undefined || next.startsWith("--")) {
       flags[key] = "true";
       continue;
     }
+
     flags[key] = next;
     i += 1;
   }
@@ -51,7 +78,7 @@ async function main(): Promise<void> {
 
   if (!command || command === "help" || flags.help === "true") {
     console.log(usage());
-    process.exit(0);
+    return;
   }
 
   assertSafeCommand(command);
@@ -59,7 +86,7 @@ async function main(): Promise<void> {
   try {
     const result = await runCommand(command, flags);
     console.log(JSON.stringify(result, null, 2));
-    process.exit(result.success === false ? 1 : 0);
+    process.exitCode = result.success === false ? 1 : 0;
   } finally {
     await shutdown();
   }
@@ -67,7 +94,7 @@ async function main(): Promise<void> {
 
 main().catch(async (error) => {
   console.error(error instanceof Error ? error.message : String(error));
-  console.error("\n" + usage());
+  console.error(`\n${usage()}`);
   await shutdown().catch(() => {});
-  process.exit(1);
+  process.exitCode = 1;
 });
