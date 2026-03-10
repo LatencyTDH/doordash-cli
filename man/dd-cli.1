@@ -29,6 +29,9 @@ The preferred command name is
 is installed as a lowercase alias.
 .SH COMMANDS
 .TP
+.B install-browser
+Install the matching Playwright Chromium build used by this package.
+.TP
 .B auth-check
 Verify whether the saved session appears authenticated. This command can also
 import an already-signed-in compatible managed-browser DoorDash session when a
@@ -82,6 +85,9 @@ Show the current cart.
 .TP
 .BR -h , " --help"
 Show usage information.
+.TP
+.BR -v , " --version"
+Show the packaged CLI version.
 .TP
 .BI --address " ADDRESS"
 Freeform delivery address for
@@ -138,11 +144,18 @@ recommended add-ons can be represented with recursive
 arrays.
 .SH EXAMPLES
 .PP
-Show help and read the manual:
+Show help, version, and read the manual:
 .PP
 .EX
 dd-cli --help
+dd-cli --version
 man dd-cli
+.EE
+.PP
+Install the matching browser build once:
+.PP
+.EX
+dd-cli install-browser
 .EE
 .PP
 Bootstrap a reusable session:
