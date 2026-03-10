@@ -1,7 +1,14 @@
 # Changelog
 
-## 0.1.0 (2026-03-10)
+All notable changes to `doordash-cli` will be documented in this file.
 
+- Versions follow [Semantic Versioning](https://semver.org/).
+- Release entries are generated from squash-merged conventional commits on `main`.
+- Git tags use the `vX.Y.Z` form.
+
+See [docs/releasing.md](docs/releasing.md) for the maintainer release flow.
+
+## 0.1.0 (2026-03-10)
 
 ### Features
 
@@ -11,7 +18,6 @@
 * ship direct session import and configurable item payloads ([360707c](https://github.com/seans-openclawbot/doordash-cli/commit/360707c3504d19e424284eb4ac4ac8f7914e9031))
 * streamline install and npm packaging ([#11](https://github.com/seans-openclawbot/doordash-cli/issues/11)) ([d6cec89](https://github.com/seans-openclawbot/doordash-cli/commit/d6cec89ca5f4f239309ea48052072fc9ca944e5d))
 
-
 ### Bug Fixes
 
 * keep release-please on the pre-v1 track ([7af23fa](https://github.com/seans-openclawbot/doordash-cli/commit/7af23fa94301642f84802a791fa6f0b53d60371a))
@@ -19,13 +25,3 @@
 * pin release-please initial version to 0.1.0 ([a679966](https://github.com/seans-openclawbot/doordash-cli/commit/a679966ab51f9693eafecfe7fce9123b862d0aec))
 * reset direct cart id when switching stores ([4f0db85](https://github.com/seans-openclawbot/doordash-cli/commit/4f0db85de3c1fe554cf4b479b2f225b7f1bf88cf))
 * validate cart-safe command surface ([f7bcb6c](https://github.com/seans-openclawbot/doordash-cli/commit/f7bcb6cc41e6869de1dcbb3fb20f3e6052156efe))
-
-## Changelog
-
-All notable changes to `doordash-cli` will be documented in this file.
-
-- Versions follow [Semantic Versioning](https://semver.org/).
-- Release entries are generated from squash-merged conventional commits on `main`.
-- Git tags use the `vX.Y.Z` form.
-
-See [docs/releasing.md](docs/releasing.md) for the maintainer release flow.

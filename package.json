@@ -61,7 +61,10 @@
     "playwright": "^1.41.0"
   },
   "devDependencies": {
+    "@release-it/conventional-changelog": "^10.0.5",
     "@types/node": "^24.3.0",
+    "conventional-changelog-conventionalcommits": "^9.3.0",
+    "release-it": "^19.2.4",
     "typescript": "^5.9.2"
   }
 }
