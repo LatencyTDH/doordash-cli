@@ -1,21 +1,35 @@
+import { cleanup as browserCleanup, setAddress } from "@striderlabs/mcp-doordash/dist/browser.js";
 import {
-  addToCart,
-  checkAuth,
-  cleanup,
-  getCart,
-  getMenu,
-  searchRestaurants,
-  setAddress,
-} from "@striderlabs/mcp-doordash/dist/browser.js";
-import { clearCookies, getCookiesPath, hasStoredCookies } from "@striderlabs/mcp-doordash/dist/auth.js";
+  addToCartDirect,
+  bootstrapAuthSession,
+  checkAuthDirect,
+  cleanupDirect,
+  clearStoredSession,
+  getCartDirect,
+  getItemDirect,
+  getMenuDirect,
+  searchRestaurantsDirect,
+  updateCartDirect,
+  type AddToCartResult,
+  type AuthBootstrapResult,
+  type AuthResult,
+  type CartResult,
+  type ItemResult,
+  type MenuResult,
+  type SearchResult,
+  type UpdateCartResult,
+} from "./direct-api.js";
 
 export const SAFE_COMMANDS = [
   "auth-check",
+  "auth-bootstrap",
   "auth-clear",
   "set-address",
   "search",
   "menu",
+  "item",
   "add-to-cart",
+  "update-cart",
   "cart",
 ] as const;
 
@@ -29,56 +43,32 @@ export const BLOCKED_COMMANDS = [
   "submit-order",
 ] as const;
 
+export type SafeCommand = (typeof SAFE_COMMANDS)[number];
+export type CommandFlags = Record<string, string>;
+
 const COMMAND_FLAGS = {
   "auth-check": [],
+  "auth-bootstrap": [],
   "auth-clear": [],
   "set-address": ["address"],
   search: ["query", "cuisine"],
   menu: ["restaurant-id"],
-  "add-to-cart": ["restaurant-id", "item-name", "quantity", "special-instructions"],
+  item: ["restaurant-id", "item-id"],
+  "add-to-cart": ["restaurant-id", "item-id", "item-name", "quantity", "special-instructions"],
+  "update-cart": ["cart-item-id", "quantity"],
   cart: [],
 } as const satisfies Record<SafeCommand, readonly string[]>;
 
-export type SafeCommand = (typeof SAFE_COMMANDS)[number];
-export type CommandFlags = Record<string, string>;
-
-type AuthCheckNoCookiesResult = {
-  success: true;
-  isLoggedIn: false;
-  message: string;
-  cookiesPath: string;
-  nextStep: string;
-};
-
-type AuthCheckResult = {
-  success: true;
-  isLoggedIn: boolean;
-  email: string | null;
-  firstName: string | null;
-  lastName: string | null;
-  cookiesPath: string;
-};
-
-type AuthClearResult = {
-  success: true;
-  message: string;
-  cookiesPath: string;
-};
-
-type SetAddressResult = Awaited<ReturnType<typeof setAddress>>;
-type SearchResult = Awaited<ReturnType<typeof searchRestaurants>>;
-type MenuResult = Awaited<ReturnType<typeof getMenu>>;
-type AddToCartResult = Awaited<ReturnType<typeof addToCart>>;
-type CartResult = Awaited<ReturnType<typeof getCart>>;
-
 export type CommandResult =
-  | AuthCheckNoCookiesResult
-  | AuthCheckResult
-  | AuthClearResult
-  | SetAddressResult
+  | AuthResult
+  | AuthBootstrapResult
+  | { success: true; message: string; cookiesPath: string; storageStatePath: string }
+  | Awaited<ReturnType<typeof setAddress>>
   | SearchResult
   | MenuResult
+  | ItemResult
   | AddToCartResult
+  | UpdateCartResult
   | CartResult;
 
 export function isSafeCommand(value: string): value is SafeCommand {
@@ -112,46 +102,21 @@ export function assertAllowedFlags(command: SafeCommand, args: CommandFlags): vo
   }
 
   const allowedText = COMMAND_FLAGS[command].length > 0 ? COMMAND_FLAGS[command].join(", ") : "(none)";
-  throw new Error(
-    `Unsupported flag(s) for ${command}: ${unknownFlags.join(", ")}. Allowed flags: ${allowedText}`,
-  );
+  throw new Error(`Unsupported flag(s) for ${command}: ${unknownFlags.join(", ")}. Allowed flags: ${allowedText}`);
 }
 
 export async function runCommand(command: SafeCommand, args: CommandFlags): Promise<CommandResult> {
   assertAllowedFlags(command, args);
 
   switch (command) {
-    case "auth-check": {
-      if (!hasStoredCookies()) {
-        return {
-          success: true,
-          isLoggedIn: false,
-          message: "No stored DoorDash session cookies found.",
-          cookiesPath: getCookiesPath(),
-          nextStep:
-            "Log in to DoorDash manually in a browser, then export/import cookies into the shared cookie file if needed.",
-        };
-      }
+    case "auth-check":
+      return checkAuthDirect();
 
-      const authState = await checkAuth();
-      return {
-        success: true,
-        isLoggedIn: authState.isLoggedIn,
-        email: authState.email ?? null,
-        firstName: authState.firstName ?? null,
-        lastName: authState.lastName ?? null,
-        cookiesPath: getCookiesPath(),
-      };
-    }
+    case "auth-bootstrap":
+      return bootstrapAuthSession();
 
-    case "auth-clear": {
-      clearCookies();
-      return {
-        success: true,
-        message: "DoorDash session cookies cleared.",
-        cookiesPath: getCookiesPath(),
-      };
-    }
+    case "auth-clear":
+      return clearStoredSession();
 
     case "set-address": {
       const address = requiredArg(args, "address");
@@ -161,36 +126,68 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
     case "search": {
       const query = requiredArg(args, "query");
       const cuisine = optionalArg(args, "cuisine");
-      return searchRestaurants(query, cuisine ? { cuisine } : undefined);
+      return searchRestaurantsDirect(query, cuisine);
     }
 
     case "menu": {
       const restaurantId = requiredArg(args, "restaurant-id");
-      return getMenu(restaurantId);
+      return getMenuDirect(restaurantId);
+    }
+
+    case "item": {
+      const restaurantId = requiredArg(args, "restaurant-id");
+      const itemId = requiredArg(args, "item-id");
+      return getItemDirect(restaurantId, itemId);
     }
 
     case "add-to-cart": {
       const restaurantId = requiredArg(args, "restaurant-id");
-      const itemName = requiredArg(args, "item-name");
+      const itemId = optionalArg(args, "item-id");
+      const itemName = optionalArg(args, "item-name");
       const quantityRaw = optionalArg(args, "quantity");
       const specialInstructions = optionalArg(args, "special-instructions");
       const quantity = quantityRaw === undefined ? 1 : Number.parseInt(quantityRaw, 10);
+
+      if (!itemId && !itemName) {
+        throw new Error("Missing required flag --item-id or --item-name");
+      }
 
       if (!Number.isInteger(quantity) || quantity < 1) {
         throw new Error(`Invalid --quantity: ${quantityRaw}`);
       }
 
-      return addToCart(restaurantId, itemName, quantity, specialInstructions);
+      return addToCartDirect({
+        restaurantId,
+        itemId,
+        itemName,
+        quantity,
+        specialInstructions,
+      });
     }
 
-    case "cart": {
-      return getCart();
+    case "update-cart": {
+      const cartItemId = requiredArg(args, "cart-item-id");
+      const quantityRaw = requiredArg(args, "quantity");
+      const quantity = Number.parseInt(quantityRaw, 10);
+
+      if (!Number.isInteger(quantity) || quantity < 0) {
+        throw new Error(`Invalid --quantity: ${quantityRaw}`);
+      }
+
+      return updateCartDirect({
+        cartItemId,
+        quantity,
+      });
     }
+
+    case "cart":
+      return getCartDirect();
   }
 }
 
 export async function shutdown(): Promise<void> {
-  await cleanup();
+  await cleanupDirect().catch(() => {});
+  await browserCleanup().catch(() => {});
 }
 
 function requiredArg(args: CommandFlags, key: string): string {
