@@ -4,7 +4,10 @@ import {
   buildAddConsumerAddressPayload,
   buildAddToCartPayload,
   buildUpdateCartPayload,
+  extractExistingOrdersFromApolloCache,
   normalizeItemName,
+  parseExistingOrderLifecycleStatus,
+  parseExistingOrdersResponse,
   parseOptionSelectionsJson,
   parseSearchRestaurantRow,
   resolveAvailableAddressMatch,
@@ -279,6 +282,165 @@ test("buildAddConsumerAddressPayload maps autocomplete/get-or-create data into a
     entryCode: null,
     personalAddressLabel: null,
   });
+});
+
+test("parseExistingOrderLifecycleStatus derives active, fulfilled, and cancelled states", () => {
+  assert.equal(parseExistingOrderLifecycleStatus({ createdAt: "2026-03-01T12:00:00Z" }), "draft");
+  assert.equal(
+    parseExistingOrderLifecycleStatus({ createdAt: "2026-03-01T12:00:00Z", submittedAt: "2026-03-01T12:01:00Z" }),
+    "submitted",
+  );
+  assert.equal(parseExistingOrderLifecycleStatus({ pollingInterval: 30, submittedAt: "2026-03-01T12:01:00Z" }), "in-progress");
+  assert.equal(parseExistingOrderLifecycleStatus({ fulfilledAt: "2026-03-01T12:45:00Z" }), "fulfilled");
+  assert.equal(parseExistingOrderLifecycleStatus({ cancelledAt: "2026-03-01T12:10:00Z" }), "cancelled");
+});
+
+test("parseExistingOrdersResponse normalizes DoorDash order history payloads", () => {
+  const orders = parseExistingOrdersResponse([
+    {
+      id: "order-row-2",
+      orderUuid: "order-uuid-2",
+      deliveryUuid: "delivery-uuid-2",
+      createdAt: "2026-03-02T12:00:00Z",
+      fulfilledAt: "2026-03-02T12:50:00Z",
+      pollingInterval: null,
+      isReorderable: true,
+      isGift: false,
+      isPickup: false,
+      isRetail: false,
+      isMerchantShipping: false,
+      containsAlcohol: false,
+      fulfillmentType: "DELIVERY",
+      shoppingProtocol: "STANDARD",
+      orderFilterType: "PAST",
+      store: {
+        id: "store-2",
+        name: "Sushi Place",
+        business: { name: "Sushi Place" },
+      },
+      grandTotal: {
+        unitAmount: 2599,
+        currency: "USD",
+        decimalPlaces: 2,
+        displayString: "$25.99",
+        sign: null,
+      },
+      orders: [
+        {
+          id: "sub-order-2",
+          items: [
+            {
+              id: "line-2",
+              name: "Salmon Roll",
+              quantity: 2,
+              specialInstructions: "extra ginger",
+              substitutionPreferences: "substitute",
+              originalItemPrice: 1299,
+              purchaseType: "PURCHASE_TYPE_UNIT",
+              purchaseQuantity: {
+                discreteQuantity: { quantity: 2, unit: "ea" },
+              },
+              fulfillQuantity: {
+                discreteQuantity: { quantity: 2, unit: "ea" },
+              },
+              orderItemExtras: [
+                {
+                  menuItemExtraId: "extra-1",
+                  name: "Sauces",
+                  orderItemExtraOptions: [
+                    {
+                      menuExtraOptionId: "option-1",
+                      name: "Soy Sauce",
+                      description: "low sodium",
+                      price: 0,
+                      quantity: 1,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "order-row-1",
+      orderUuid: "order-uuid-1",
+      deliveryUuid: "delivery-uuid-1",
+      createdAt: "2026-03-03T12:00:00Z",
+      submittedAt: "2026-03-03T12:01:00Z",
+      pollingInterval: 30,
+      isReorderable: false,
+      isGift: false,
+      isPickup: false,
+      isRetail: false,
+      isMerchantShipping: false,
+      containsAlcohol: false,
+      fulfillmentType: "DELIVERY",
+      shoppingProtocol: "STANDARD",
+      orderFilterType: "ACTIVE",
+      store: {
+        id: "store-1",
+        name: "Burger Spot",
+        business: { name: "Burger Spot" },
+      },
+      orders: [{ id: "sub-order-1", items: [{ id: "line-1", name: "Burger", quantity: 1 }] }],
+    },
+  ]);
+
+  assert.equal(orders[0]?.orderUuid, "order-uuid-1");
+  assert.equal(orders[0]?.lifecycleStatus, "in-progress");
+  assert.equal(orders[0]?.isActive, true);
+  assert.equal(orders[1]?.grandTotal?.displayString, "$25.99");
+  assert.equal(orders[1]?.items[0]?.extras[0]?.options[0]?.name, "Soy Sauce");
+});
+
+test("extractExistingOrdersFromApolloCache resolves Apollo refs from the orders page cache", () => {
+  const orders = extractExistingOrdersFromApolloCache({
+    ROOT_QUERY: {
+      'getConsumerOrdersWithDetails({"includeCancelled":true,"limit":10,"offset":0})': [{ __ref: "ConsumerOrder:1" }],
+    },
+    'ConsumerOrder:1': {
+      id: "row-1",
+      orderUuid: "order-uuid-1",
+      deliveryUuid: "delivery-uuid-1",
+      createdAt: "2026-03-04T12:00:00Z",
+      submittedAt: "2026-03-04T12:01:00Z",
+      pollingInterval: 20,
+      isReorderable: false,
+      isGift: false,
+      isPickup: false,
+      isRetail: false,
+      isMerchantShipping: false,
+      containsAlcohol: false,
+      fulfillmentType: "DELIVERY",
+      shoppingProtocol: "STANDARD",
+      orderFilterType: "ACTIVE",
+      store: { __ref: "Store:1" },
+      orders: [{ __ref: "GroupedOrder:1" }],
+      grandTotal: { displayString: "$19.99", unitAmount: 1999, currency: "USD", decimalPlaces: 2, sign: null },
+      likelyOosItems: [],
+    },
+    'Store:1': {
+      id: "store-1",
+      name: "Burger Spot",
+      business: { name: "Burger Spot" },
+    },
+    'GroupedOrder:1': {
+      id: "group-1",
+      items: [{ __ref: "OrderItem:1" }],
+    },
+    'OrderItem:1': {
+      id: "line-1",
+      name: "Burger",
+      quantity: 1,
+    },
+  });
+
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0]?.store?.name, "Burger Spot");
+  assert.equal(orders[0]?.items[0]?.name, "Burger");
+  assert.equal(orders[0]?.hasLiveTracking, true);
 });
 
 test("buildAddToCartPayload blocks required-option items when no selections are provided", async () => {

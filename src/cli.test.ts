@@ -43,22 +43,25 @@ test("safe command allowlist stays cart-safe while adding direct API helpers", (
     "search",
     "menu",
     "item",
+    "orders",
+    "order",
     "add-to-cart",
     "update-cart",
     "cart",
   ]);
 });
 
-test("dangerous commands are rejected", () => {
+test("dangerous and unsupported legacy commands are rejected", () => {
   assert.throws(() => assertSafeCommand("checkout"), /Blocked command: checkout/);
   assert.throws(() => assertSafeCommand("place-order"), /Blocked command: place-order/);
-  assert.throws(() => assertSafeCommand("track-order"), /Blocked command: track-order/);
+  assert.throws(() => assertSafeCommand("track-order"), /Use `orders` or `order --order-id/);
   assert.throws(() => assertSafeCommand("payment"), /Blocked command: payment/);
 });
 
 test("unsupported flags are rejected before network work runs", () => {
   assert.throws(() => assertAllowedFlags("cart", { payment: "visa" }), /Unsupported flag\(s\) for cart/);
   assert.throws(() => assertAllowedFlags("item", { query: "salmon" }), /Unsupported flag\(s\) for item/);
+  assert.throws(() => assertAllowedFlags("orders", { cuisine: "japanese" }), /Unsupported flag\(s\) for orders/);
 });
 
 test("argument parsing supports inline and spaced flags", () => {
@@ -67,6 +70,14 @@ test("argument parsing supports inline and spaced flags", () => {
     flags: {
       query: "sushi",
       cuisine: "japanese",
+    },
+  });
+
+  assert.deepEqual(parseArgv(["orders", "--limit=5", "--active-only"]), {
+    command: "orders",
+    flags: {
+      limit: "5",
+      "active-only": "true",
     },
   });
 });
@@ -86,7 +97,7 @@ test("argument parsing normalizes common Unicode dash flags", () => {
   });
 });
 
-test("help output shows the direct cart-safe command surface", () => {
+test("help output shows the direct read-only/cart-safe command surface", () => {
   const result = runCli(["--help"]);
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Usage:/);
@@ -94,9 +105,11 @@ test("help output shows the direct cart-safe command surface", () => {
   assert.match(result.stdout, /doordash-cli <command>/);
   assert.match(result.stdout, /auth-bootstrap/);
   assert.match(result.stdout, /set-address --address/);
+  assert.match(result.stdout, /orders \[--limit 20\] \[--active-only\]/);
+  assert.match(result.stdout, /order --order-id/);
   assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /man dd-cli/);
-  assert.match(result.stdout, /Dangerous commands are intentionally unsupported/);
+  assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
   assert.doesNotMatch(result.stdout, /Dd-cli/);
 });
 
@@ -133,7 +146,7 @@ test("blocked commands fail immediately", () => {
   const result = runCli(["checkout"]);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Blocked command: checkout/);
-  assert.match(result.stderr, /cart-safe only/);
+  assert.match(result.stderr, /existing-order inspection only/);
 });
 
 test("safe commands reject unknown flags before touching DoorDash flows", () => {

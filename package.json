@@ -1,7 +1,7 @@
 {
   "name": "doordash-cli",
   "version": "0.1.0",
-  "description": "Cart-safe DoorDash CLI with direct API support for browse and cart workflows.",
+  "description": "Cart-safe DoorDash CLI with direct API support for browse, read-only existing-order, and cart workflows.",
   "type": "module",
   "private": true,
   "main": "dist/lib.js",
@@ -16,8 +16,10 @@
   "files": [
     "dist",
     "man",
+    "docs/examples.md",
     "scripts/install-manpage.sh",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -33,7 +35,7 @@
     "cart-safe"
   ],
   "author": "doordash-cli contributors",
-  "license": "ISC",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/seans-openclawbot/doordash-cli.git"
