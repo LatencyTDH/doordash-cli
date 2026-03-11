@@ -5,9 +5,9 @@ _Status:_ historical reverse-engineering report. The repo has **since** shipped 
 
 ## Status update for the current repo
 
-Since this report was written, the CLI now uses the direct consumer-web transport by default for `auth-check`, `set-address`, `search`, `menu`, `item`, `cart`, `add-to-cart`, and `update-cart`.
+Since this report was written, the CLI now uses the direct consumer-web transport by default for `auth-check`, `set-address`, `search`, `menu`, `item`, `orders`, `order`, `cart`, `add-to-cart`, and `update-cart`.
 
-Current known limits still match the safety posture from this research, with one later exception: the repo now allows read-only existing-order inspection via `orders` / `order`.
+Current known limits still match the safety posture from this research for the current cart-safe CLI surface, with one later exception: the repo now allows read-only existing-order inspection via `orders` / `order`. Live tracking remains out of scope.
 
 - `set-address` still fails closed when DoorDash does not expose a saved `defaultAddressId`
 - nested cursor-driven option trees are still rejected instead of guessed

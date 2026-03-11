@@ -1,6 +1,6 @@
-.TH DD-CLI 1 "2026-03-10" "doordash-cli 0.1.0" "User Commands"
+.TH DD-CLI 1 "2026-03-11" "doordash-cli 0.2.0" "User Commands"
 .SH NAME
-dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, read-only order inspection, and cart management
+dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, read-only existing-order inspection, and cart management
 .SH SYNOPSIS
 .B dd-cli
 [\fICOMMAND\fR] [\fIOPTIONS\fR]
@@ -14,18 +14,18 @@ fit well in a terminal: signing in, setting delivery context, searching stores,
 inspecting menus and items, inspecting existing orders, and managing the cart.
 .PP
 The command surface is intentionally small. The CLI does not expose checkout,
-order placement, payment actions, or order mutation/cancellation. Read-only
-existing-order inspection is allowed. If a payload cannot be validated safely
-from known DoorDash consumer-web request shapes, the tool fails closed instead
-of guessing.
+order placement, payment actions, live tracking, or order mutation/cancellation.
+Read-only existing-order inspection is allowed. If a payload cannot be
+validated safely from known DoorDash consumer-web request shapes, the tool
+fails closed instead of guessing.
 .PP
 If invoked with no command, or with
 .BR -h / --help ,
 it prints usage text and exits successfully.
 .PP
 The preferred command name is
-.BR dd-cli .
-.B doordash-cli
+.BR doordash-cli .
+.B dd-cli
 is installed as a lowercase alias.
 .SH COMMANDS
 .TP
@@ -155,34 +155,34 @@ man dd-cli
 Install the matching browser build once:
 .PP
 .EX
-dd-cli install-browser
+doordash-cli install-browser
 .EE
 .PP
 Bootstrap a reusable session:
 .PP
 .EX
-dd-cli auth-bootstrap
+doordash-cli auth-bootstrap
 .EE
 .PP
 Set an address and search for sushi:
 .PP
 .EX
-dd-cli set-address --address "350 5th Ave, New York, NY 10118"
-dd-cli search --query sushi
+doordash-cli set-address --address "350 5th Ave, New York, NY 10118"
+doordash-cli search --query sushi
 .EE
 .PP
 Inspect existing orders:
 .PP
 .EX
-dd-cli orders
-dd-cli orders --active-only
-dd-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678
+doordash-cli orders
+doordash-cli orders --active-only
+doordash-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678
 .EE
 .PP
 Add a configurable item to the cart:
 .PP
 .EX
-dd-cli add-to-cart \
+doordash-cli add-to-cart \
   --restaurant-id 1721744 \
   --item-id 546936015 \
   --options-json '[{"groupId":"703393388","optionId":"4716032529"},{"groupId":"703393389","optionId":"4716042466"}]'
@@ -211,10 +211,10 @@ Success, including help and no-argument usage output.
 .B 1
 Validation error, blocked command, unsupported flag, or runtime failure.
 .SH SAFETY
-The CLI is intentionally limited to browsing, read-only existing-order
-inspection, and cart management. Dangerous commands such as checkout,
-place-order, payment actions, and order mutation/cancellation are blocked
-immediately. The legacy
+The CLI is intentionally limited to session, discovery, read-only
+existing-order inspection, and cart management. Dangerous commands such as
+checkout, place-order, payment actions, live tracking, and order
+mutation/cancellation are blocked immediately. The legacy
 .B track-order
 verb remains blocked; use
 .B orders

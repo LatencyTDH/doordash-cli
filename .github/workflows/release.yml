@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Preview the release without pushing commits/tags or creating a GitHub Release"
+        description: "Preview the release without pushing commits/tags, creating a GitHub Release, or publishing to npm"
         required: false
         default: false
         type: boolean
@@ -36,6 +36,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: Configure Git author
         run: |
@@ -82,6 +83,21 @@ jobs:
         run: |
           echo "No releasable conventional commits were found since the last tag. Skipping release." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Validate npm publish auth
+        if: ${{ steps.next.outputs.version != '' && inputs.dry_run != true }}
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "NPM_TOKEN is not configured. Add it as a repository or organization Actions secret before running a real release." >&2
+            exit 1
+          fi
+
+          npm whoami >/dev/null
+
       - name: Run release-it
         if: ${{ steps.next.outputs.version != '' }}
         shell: bash
@@ -104,17 +120,57 @@ jobs:
 
           npx release-it "${args[@]}"
 
+      - name: Publish package to npm
+        id: publish
+        if: ${{ steps.next.outputs.version != '' && inputs.dry_run != true }}
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "NPM_TOKEN is not configured. Add it as a repository or organization Actions secret before running a real release." >&2
+            exit 1
+          fi
+
+          npm publish --access public
+
       - name: Summarize release run
-        if: ${{ steps.next.outputs.version != '' }}
+        if: ${{ always() && steps.next.outputs.version != '' }}
         env:
           VERSION: ${{ steps.next.outputs.version }}
           SOURCE: ${{ steps.next.outputs.source }}
           DRY_RUN: ${{ inputs.dry_run }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
         run: |
+          set -euo pipefail
+
+          publish_status="skipped"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            publish_status="skipped (dry run)"
+          else
+            case "$PUBLISH_OUTCOME" in
+              success)
+                publish_status="published to npm via Actions secret NPM_TOKEN"
+                ;;
+              failure)
+                publish_status="failed during npm publish step"
+                ;;
+              skipped|"")
+                publish_status="skipped"
+                ;;
+              *)
+                publish_status="$PUBLISH_OUTCOME"
+                ;;
+            esac
+          fi
+
           {
             echo "### Release run"
             echo
-            echo "- Version: \\`$VERSION\\`"
-            echo "- Version source: \\`$SOURCE\\`"
-            echo "- Dry run: \\`$DRY_RUN\\`"
+            echo "- Version: \`$VERSION\`"
+            echo "- Version source: \`$SOURCE\`"
+            echo "- Dry run: \`$DRY_RUN\`"
+            echo "- npm publish: \`$publish_status\`"
           } >> "$GITHUB_STEP_SUMMARY"

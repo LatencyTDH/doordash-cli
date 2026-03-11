@@ -94,6 +94,8 @@ module.exports = {
     tagAnnotation: 'Release ${version}',
   },
   npm: {
+    // npm publication is handled explicitly in .github/workflows/release.yml
+    // so dry runs can skip publishing while real runs publish with Actions secrets.
     publish: false,
   },
   github: {
