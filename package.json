@@ -1,6 +1,6 @@
 {
   "name": "doordash-cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Cart-safe DoorDash CLI with direct API support for browse, read-only existing-order, and cart workflows.",
   "type": "module",
   "main": "dist/lib.js",
