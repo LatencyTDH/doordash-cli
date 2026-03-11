@@ -37,11 +37,11 @@ Verify whether the saved session appears authenticated. This command can also
 import an already-signed-in compatible managed-browser DoorDash session when a
 usable CDP endpoint is available.
 .TP
-.B auth-bootstrap
+.B login
 Launch Chromium for a one-time manual sign-in flow, then save reusable browser
 state for later direct API calls.
 .TP
-.B auth-clear
+.B logout
 Delete stored session material used by this CLI.
 .TP
 .BI "set-address --address " ADDRESS
@@ -161,7 +161,7 @@ doordash-cli install-browser
 Bootstrap a reusable session:
 .PP
 .EX
-doordash-cli auth-bootstrap
+doordash-cli login
 .EE
 .PP
 Set an address and search for sushi:
@@ -194,7 +194,7 @@ parsers, or scripts.
 The CLI persists reusable session state under the user's configuration
 directory. The exact file layout is an implementation detail and may evolve over
 time, but the saved state is reused across runs unless cleared with
-.BR auth-clear .
+.BR logout .
 .SH ENVIRONMENT
 .TP
 .B DOORDASH_MANAGED_BROWSER_CDP_URL

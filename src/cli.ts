@@ -28,8 +28,8 @@ export function usage(): string {
     "Safe commands:",
     "  install-browser",
     "  auth-check",
-    "  auth-bootstrap",
-    "  auth-clear",
+    "  login",
+    "  logout",
     '  set-address --address "350 5th Ave, New York, NY 10118"',
     "  search --query sushi [--cuisine japanese]",
     "  menu --restaurant-id 123456",
@@ -47,6 +47,7 @@ export function usage(): string {
     "  - install-browser downloads the matching Playwright Chromium build used by this package.",
     "  - Manual pages ship with the project: man dd-cli or man doordash-cli.",
     "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, orders, order, cart, add-to-cart, and update-cart.",
+    "  - login launches Chromium for a one-time manual sign-in flow and saves reusable state for later direct API calls.",
     "  - auth-check can reuse an already-signed-in compatible DoorDash browser session when one is available.",
     "  - set-address now uses DoorDash autocomplete/get-or-create plus addConsumerAddressV2 for brand-new address enrollment when needed.",
     "  - configurable items require explicit --options-json selections.",
@@ -62,9 +63,9 @@ export function usage(): string {
     "  dd-cli search --query sushi",
     "  dd-cli orders --active-only",
     "  doordash-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678",
-    "  doordash-cli auth-check",
+    "  doordash-cli login",
     "",
-    "Allowed commands: install-browser, auth-check, auth-bootstrap, auth-clear, set-address, search, menu, item, orders, order, add-to-cart, update-cart, cart",
+    "Allowed commands: install-browser, auth-check, login, logout, set-address, search, menu, item, orders, order, add-to-cart, update-cart, cart",
   ].join("\n");
 }
 

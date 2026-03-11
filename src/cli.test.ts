@@ -38,8 +38,8 @@ test("safe command allowlist stays cart-safe while adding install helpers", () =
   assert.deepEqual(SAFE_COMMANDS, [
     "install-browser",
     "auth-check",
-    "auth-bootstrap",
-    "auth-clear",
+    "login",
+    "logout",
     "set-address",
     "search",
     "menu",
@@ -52,11 +52,13 @@ test("safe command allowlist stays cart-safe while adding install helpers", () =
   ]);
 });
 
-test("dangerous and unsupported legacy commands are rejected", () => {
+test("dangerous and renamed legacy commands are rejected with guidance", () => {
   assert.throws(() => assertSafeCommand("checkout"), /Blocked command: checkout/);
   assert.throws(() => assertSafeCommand("place-order"), /Blocked command: place-order/);
   assert.throws(() => assertSafeCommand("track-order"), /Use `orders` or `order --order-id/);
   assert.throws(() => assertSafeCommand("payment"), /Blocked command: payment/);
+  assert.throws(() => assertSafeCommand("auth-bootstrap"), /renamed it to login/);
+  assert.throws(() => assertSafeCommand("auth-clear"), /renamed it to logout/);
 });
 
 test("unsupported flags are rejected before network work runs", () => {
@@ -115,7 +117,8 @@ test("help output shows the direct read-only/cart-safe command surface", () => {
   assert.match(result.stdout, /dd-cli <command>/);
   assert.match(result.stdout, /doordash-cli <command>/);
   assert.match(result.stdout, /install-browser/);
-  assert.match(result.stdout, /auth-bootstrap/);
+  assert.match(result.stdout, /login/);
+  assert.match(result.stdout, /logout/);
   assert.match(result.stdout, /set-address --address/);
   assert.match(result.stdout, /orders \[--limit 20\] \[--active-only\]/);
   assert.match(result.stdout, /order --order-id/);
@@ -123,6 +126,8 @@ test("help output shows the direct read-only/cart-safe command surface", () => {
   assert.match(result.stdout, /--version, -v/);
   assert.match(result.stdout, /man dd-cli/);
   assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
+  assert.doesNotMatch(result.stdout, /auth-bootstrap/);
+  assert.doesNotMatch(result.stdout, /auth-clear/);
   assert.doesNotMatch(result.stdout, /Dd-cli/);
 });
 
@@ -131,6 +136,9 @@ test("repository ships man pages for the supported lowercase command names", () 
   const aliasManPath = join(distDir, "..", "man", "doordash-cli.1");
 
   assert.match(readFileSync(ddManPath, "utf8"), /install-browser/);
+  assert.match(readFileSync(ddManPath, "utf8"), /\.B login/);
+  assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-bootstrap/);
+  assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-clear/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /Dd-cli/);
   assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
 });
@@ -159,6 +167,18 @@ test("version flag prints the package version", () => {
   const result = runCli(["--version"]);
   assert.equal(result.status, 0);
   assert.equal(result.stdout.trim(), version());
+});
+
+test("legacy auth command invocations point users to login/logout", () => {
+  const loginRename = runCli(["auth-bootstrap"]);
+  assert.equal(loginRename.status, 1);
+  assert.match(loginRename.stderr, /Unsupported command: auth-bootstrap/);
+  assert.match(loginRename.stderr, /renamed it to login/);
+
+  const logoutRename = runCli(["auth-clear"]);
+  assert.equal(logoutRename.status, 1);
+  assert.match(logoutRename.stderr, /Unsupported command: auth-clear/);
+  assert.match(logoutRename.stderr, /renamed it to logout/);
 });
 
 test("blocked commands fail immediately", () => {

@@ -33,7 +33,7 @@ If you stay in checkout mode, replace `doordash-cli` with `npm run cli --` in th
 
 ## Install the browser once
 
-If you plan to use `auth-bootstrap`, install the matching Playwright Chromium build:
+If you plan to sign in with `login`, install the matching Playwright Chromium build:
 
 ### Global or linked install
 
@@ -50,7 +50,7 @@ npm run install:browser
 ## First run
 
 ```bash
-doordash-cli auth-bootstrap
+doordash-cli login
 doordash-cli auth-check
 doordash-cli set-address --address "350 5th Ave, New York, NY 10118"
 doordash-cli search --query sushi
@@ -60,4 +60,4 @@ doordash-cli search --query sushi
 
 If you already have a compatible signed-in DoorDash browser session available, direct commands may reuse it instead of opening a fresh browser context.
 
-If not, run `doordash-cli auth-bootstrap` once to save reusable state for later commands.
+If not, run `doordash-cli login` once to save reusable state for later commands.
