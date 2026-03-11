@@ -9,6 +9,16 @@ All notable changes to `doordash-cli` will be documented in this file.
 
 See [docs/releasing.md](docs/releasing.md) for the maintainer release flow.
 
+## [0.3.0](https://github.com/LatencyTDH/doordash-cli/compare/v0.2.0...v0.3.0) (2026-03-11)
+
+### Features
+
+* rename auth commands to login/logout ([#27](https://github.com/LatencyTDH/doordash-cli/issues/27)) ([f5bf85c](https://github.com/LatencyTDH/doordash-cli/commit/f5bf85c556d23e7cefc95f346777d33fb1021bcc))
+
+### Bug Fixes
+
+* preserve existing-order docs in release-flow cleanup ([#25](https://github.com/LatencyTDH/doordash-cli/issues/25)) ([4789089](https://github.com/LatencyTDH/doordash-cli/commit/4789089dd831b42cd037707e82a0f102988fd830))
+
 ## 0.2.0 (2026-03-11)
 
 ### Features
