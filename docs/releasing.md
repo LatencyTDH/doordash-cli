@@ -1,6 +1,6 @@
 # Releasing doordash-cli
 
-`doordash-cli` now uses a **true one-step manual release flow**.
+`doordash-cli` uses a **manual trigger, one-run release flow**.
 
 When a maintainer decides it is time to ship, they run one GitHub Action and the workflow directly:
 
@@ -12,10 +12,18 @@ When a maintainer decides it is time to ship, they run one GitHub Action and the
 - commits the release metadata back to `main`
 - tags `vX.Y.Z`
 - creates the GitHub Release and uploads the assets
+- publishes the same version to npm on real non-dry-run releases
 
-No release PR. No second merge step. No waiting around for the “real” release after the release workflow.
+Dry runs keep the preview behavior: they do **not** push commits, create the GitHub Release, or publish to npm.
 
-Public npm publication now exists, but it is still a deliberate maintainer follow-up after the GitHub release flow rather than part of the workflow itself.
+## Release architecture
+
+The workflow keeps the responsibilities split cleanly:
+
+- `release-it` handles versioning, changelog generation, the release commit, the Git tag, and the GitHub Release.
+- GitHub Actions performs npm publication as a separate explicit workflow step after `release-it` succeeds.
+
+That split keeps npm auth out of `release-it` config, makes dry-run behavior obvious, and lets the workflow gate publication with one condition.
 
 ## Why this replaced Release Please
 
@@ -66,7 +74,7 @@ This keeps early releases honest without accidentally burning the major version 
 
 Release notes and version bumps are derived from the squash commits that land on `main`, so PR titles and final squash-merge titles need to use conventional commit style:
 
-- `feat: add read-only order filter`
+- `feat: add nested options support`
 - `fix: handle missing session state`
 - `feat!: rename auth bootstrap output`
 
@@ -82,14 +90,14 @@ Rules of thumb:
 1. Make sure `main` is in a releasable state.
 2. Open **Actions → release → Run workflow**.
 3. Leave `version` blank for the normal path.
-   - The workflow will compute the next version from conventional commits since the last tag.
+   - The workflow computes the next version from conventional commits since the last tag.
    - If there are no releasable commits, it exits cleanly without creating anything.
 4. Optionally set:
-   - `dry_run = true` to preview the release without pushing/tagging/publishing the GitHub Release
+   - `dry_run = true` to preview the release without pushing, tagging, creating the GitHub Release, or publishing to npm
    - `version = X.Y.Z` only when you intentionally want to override the computed version
 5. Run the workflow.
 
-That single run will:
+A real non-dry-run execution will:
 
 - update `CHANGELOG.md`
 - update `package.json` and `package-lock.json`
@@ -101,6 +109,26 @@ That single run will:
 - push the commit to `main`
 - create tag `vX.Y.Z`
 - create the GitHub Release and attach the tarball/checksum assets
+- publish `doordash-cli@X.Y.Z` to npm
+
+## npm publish security model
+
+The workflow uses the standard GitHub Actions npm-auth pattern:
+
+- `actions/setup-node` writes npm registry configuration for `https://registry.npmjs.org`
+- the repository or organization Actions secret `NPM_TOKEN` is exposed only to the npm auth preflight step and the dedicated npm publish step
+- those steps map `NPM_TOKEN` to `NODE_AUTH_TOKEN`, which `npm whoami` and `npm publish` read automatically
+- real releases verify npm auth before `release-it` runs, so a missing or invalid token fails early before tags or GitHub releases are created
+- the token is never committed to the repo, hardcoded in workflow files, or printed in logs
+- dry runs never execute the npm auth or npm publish steps
+
+Recommended setup:
+
+1. Create an npm token on the maintainer account that has publish access to `doordash-cli`.
+2. Store it as a GitHub Actions secret named `NPM_TOKEN` at the repository or organization level.
+3. Keep the secret scoped to release automation rather than copying it into multiple systems.
+
+One secret is enough for this repo. No checked-in `.npmrc` token, no extra release-machine credential sprawl.
 
 ## Changelog and release notes
 
@@ -115,53 +143,6 @@ Install and first-run docs should stay in:
 
 Do not treat GitHub Release bodies as the place for a giant evergreen install tutorial.
 
-## npm publication
-
-Public npm publication is live at <https://www.npmjs.com/package/doordash-cli>.
-
-The GitHub Actions release workflow still creates the release commit, tag, GitHub Release, tarball, and checksum only. It does **not** publish to npm automatically.
-
-Until automation is added intentionally, npm publication is a maintainer step run from an authenticated release machine.
-
-### Release-machine auth
-
-Authenticate once on the release machine and verify the active account before publishing:
-
-```bash
-npm login --auth-type=legacy --registry=https://registry.npmjs.org/
-npm whoami
-```
-
-The maintainer account for this package is `latencytdh`.
-
-### Manual npm publish step
-
-After the GitHub release workflow finishes for `vX.Y.Z`, publish that same release from a clean checkout:
-
-```bash
-git fetch --tags origin
-git checkout vX.Y.Z
-npm ci
-npm run validate
-npm run smoke:pack
-npm publish --access public
-```
-
-Then verify what npm received:
-
-```bash
-npm view doordash-cli version
-npm view doordash-cli dist-tags --json
-```
-
-For an end-to-end user check, install into a clean prefix or environment and run both shipped commands:
-
-```bash
-npm install -g doordash-cli
-doordash-cli --help
-dd-cli --help
-```
-
 ## Validation expectations
 
 Before merging release-process changes, the minimum validation is still:
@@ -172,6 +153,7 @@ For release tooling changes, also validate as appropriate:
 
 - `node dist/bin.js --help`
 - `npm pack --dry-run`
+- `npm publish --dry-run`
 - release-tool dry runs / version previews
 - workflow YAML sanity checks
 
