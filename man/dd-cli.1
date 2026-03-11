@@ -1,4 +1,4 @@
-.TH DD-CLI 1 "2026-03-11" "doordash-cli 0.2.0" "User Commands"
+.TH DD-CLI 1 "2026-03-11" "doordash-cli 0.3.0" "User Commands"
 .SH NAME
 dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, read-only existing-order inspection, and cart management
 .SH SYNOPSIS
@@ -34,8 +34,8 @@ Install the matching Playwright Chromium build used by this package.
 .TP
 .B auth-check
 Verify whether the saved session appears authenticated. This command can also
-import an already-signed-in compatible managed-browser DoorDash session when a
-usable CDP endpoint is available.
+quietly reuse an already-signed-in compatible managed-browser DoorDash session
+when a usable CDP endpoint is available.
 .TP
 .B login
 Launch Chromium for a one-time manual sign-in flow, then save reusable browser

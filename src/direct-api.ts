@@ -1424,6 +1424,10 @@ class DoorDashDirectSession {
     }
 
     this.attemptedManagedImport = true;
+    if (await hasPersistedSessionArtifacts()) {
+      return;
+    }
+
     await importManagedBrowserSessionIfAvailable().catch(() => {});
   }
 }
@@ -2366,6 +2370,37 @@ function normalizeAddressText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+export function isDoorDashUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.hostname === "doordash.com" || url.hostname.endsWith(".doordash.com");
+  } catch {
+    return false;
+  }
+}
+
+export function hasDoorDashCookies(cookies: ReadonlyArray<Pick<Cookie, "domain">>): boolean {
+  return cookies.some((cookie) => {
+    const domain = cookie.domain.trim().replace(/^\./, "").toLowerCase();
+    return domain === "doordash.com" || domain.endsWith(".doordash.com");
+  });
+}
+
+export function selectManagedBrowserImportMode(input: {
+  pageUrls: readonly string[];
+  cookies: ReadonlyArray<Pick<Cookie, "domain">>;
+}): "page" | "cookies" | "skip" {
+  if (input.pageUrls.some((url) => isDoorDashUrl(url))) {
+    return "page";
+  }
+
+  if (hasDoorDashCookies(input.cookies)) {
+    return "cookies";
+  }
+
+  return "skip";
+}
+
 async function importManagedBrowserSessionIfAvailable(): Promise<boolean> {
   for (const cdpUrl of await getManagedBrowserCdpCandidates()) {
     if (!(await isCdpEndpointReachable(cdpUrl))) {
@@ -2373,7 +2408,6 @@ async function importManagedBrowserSessionIfAvailable(): Promise<boolean> {
     }
 
     let browser: Browser | null = null;
-    let tempPage: Page | null = null;
     try {
       browser = await chromium.connectOverCDP(cdpUrl);
       const context = browser.contexts()[0];
@@ -2381,26 +2415,34 @@ async function importManagedBrowserSessionIfAvailable(): Promise<boolean> {
         continue;
       }
 
-      let page = context.pages().find((candidate) => candidate.url().includes("doordash.com")) ?? null;
-      if (!page) {
-        tempPage = await context.newPage();
-        page = tempPage;
-        await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
-        await page.waitForTimeout(1_000);
-      }
+      const cookies = await context.cookies();
+      const pages = context.pages();
+      const reusablePage = pages.find((candidate) => isDoorDashUrl(candidate.url())) ?? null;
+      const importMode = selectManagedBrowserImportMode({
+        pageUrls: reusablePage ? [reusablePage.url()] : [],
+        cookies,
+      });
 
-      const consumerData = await fetchConsumerViaPage(page);
-      const consumer = consumerData.consumer ?? null;
-      if (!consumer || consumer.isGuest !== false) {
+      if (importMode === "skip") {
         continue;
       }
 
-      await saveContextState(context);
-      return true;
+      if (reusablePage) {
+        const consumerData = await fetchConsumerViaPage(reusablePage).catch(() => null);
+        const consumer = consumerData?.consumer ?? null;
+        if (consumer?.isGuest === false) {
+          await saveContextState(context, cookies);
+          return true;
+        }
+      }
+
+      if (hasDoorDashCookies(cookies)) {
+        await saveContextState(context, cookies);
+        return true;
+      }
     } catch {
       continue;
     } finally {
-      await tempPage?.close().catch(() => {});
       await browser?.close().catch(() => {});
     }
   }
@@ -2428,13 +2470,13 @@ async function fetchConsumerViaPage(page: Page): Promise<{ consumer: ConsumerGra
   return parseGraphQlResponse<{ consumer: ConsumerGraph | null }>("managedBrowserConsumerImport", raw.status, raw.text);
 }
 
-async function saveContextState(context: BrowserContext): Promise<void> {
+async function saveContextState(context: BrowserContext, cookies: Cookie[] | null = null): Promise<void> {
   const storageStatePath = getStorageStatePath();
   await ensureConfigDir();
   await context.storageState({ path: storageStatePath });
 
-  const cookies = await context.cookies();
-  await writeFile(getCookiesPath(), JSON.stringify(cookies, null, 2));
+  const resolvedCookies = cookies ?? (await context.cookies());
+  await writeFile(getCookiesPath(), JSON.stringify(resolvedCookies, null, 2));
 }
 
 async function getManagedBrowserCdpCandidates(): Promise<string[]> {
@@ -3262,6 +3304,14 @@ async function hasStorageState(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function hasPersistedSessionArtifacts(): Promise<boolean> {
+  if (await hasStorageState()) {
+    return true;
+  }
+
+  return (await readStoredCookies()).length > 0;
 }
 
 async function readStoredCookies(): Promise<Cookie[]> {
