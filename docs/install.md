@@ -13,7 +13,7 @@ That is the long-term default install path. Once npm publication is live, it ins
 Before npm publication is enabled, install from a checkout:
 
 ```bash
-git clone https://github.com/seans-openclawbot/doordash-cli.git
+git clone https://github.com/LatencyTDH/doordash-cli.git
 cd doordash-cli
 npm install
 npm link

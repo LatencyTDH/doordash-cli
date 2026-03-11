@@ -30,7 +30,7 @@ For the full install and first-run guide, see [docs/install.md](docs/install.md)
 Before npm publication is enabled, use a checkout:
 
 ```bash
-git clone https://github.com/seans-openclawbot/doordash-cli.git
+git clone https://github.com/LatencyTDH/doordash-cli.git
 cd doordash-cli
 npm install
 npm link
