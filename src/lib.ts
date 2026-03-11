@@ -36,8 +36,8 @@ const PLAYWRIGHT_CLI_PATH = join(dirname(require.resolve("playwright/package.jso
 export const SAFE_COMMANDS = [
   "install-browser",
   "auth-check",
-  "auth-bootstrap",
-  "auth-clear",
+  "login",
+  "logout",
   "set-address",
   "search",
   "menu",
@@ -62,11 +62,16 @@ export const BLOCKED_COMMANDS = [
 export type SafeCommand = (typeof SAFE_COMMANDS)[number];
 export type CommandFlags = Record<string, string>;
 
+const LEGACY_COMMAND_RENAMES = {
+  "auth-bootstrap": "login",
+  "auth-clear": "logout",
+} as const;
+
 const COMMAND_FLAGS = {
   "install-browser": [],
   "auth-check": [],
-  "auth-bootstrap": [],
-  "auth-clear": [],
+  login: [],
+  logout: [],
   "set-address": ["address"],
   search: ["query", "cuisine"],
   menu: ["restaurant-id"],
@@ -113,6 +118,11 @@ export function assertSafeCommand(value: string): asserts value is SafeCommand {
     );
   }
 
+  const renamedTo = LEGACY_COMMAND_RENAMES[value as keyof typeof LEGACY_COMMAND_RENAMES];
+  if (renamedTo) {
+    throw new Error(`Unsupported command: ${value}. This CLI renamed it to ${renamedTo}.`);
+  }
+
   throw new Error(`Unsupported command: ${value}. Allowed commands: ${SAFE_COMMANDS.join(", ")}`);
 }
 
@@ -138,10 +148,10 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
     case "auth-check":
       return checkAuthDirect();
 
-    case "auth-bootstrap":
+    case "login":
       return bootstrapAuthSession();
 
-    case "auth-clear":
+    case "logout":
       return clearStoredSession();
 
     case "set-address": {

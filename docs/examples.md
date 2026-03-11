@@ -29,13 +29,13 @@ doordash-cli auth-check
 If needed, launch Chromium for a one-time sign-in and save reusable state:
 
 ```bash
-doordash-cli auth-bootstrap
+doordash-cli login
 ```
 
 Reset saved session state when you want a clean start:
 
 ```bash
-doordash-cli auth-clear
+doordash-cli logout
 ```
 
 ## Search, menus, and items

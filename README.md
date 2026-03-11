@@ -46,7 +46,7 @@ npm run cli -- --help
 
 ### Browser prerequisite
 
-If you plan to use `auth-bootstrap`, install Playwright's Chromium build once:
+If you plan to sign in with `login`, install Playwright's Chromium build once:
 
 ```bash
 doordash-cli install-browser
@@ -57,7 +57,7 @@ npm run install:browser
 ## First run
 
 ```bash
-doordash-cli auth-bootstrap
+doordash-cli login
 doordash-cli auth-check
 doordash-cli set-address --address "350 5th Ave, New York, NY 10118"
 doordash-cli search --query sushi
@@ -73,8 +73,8 @@ If you already have a compatible signed-in DoorDash browser session available, `
 
 - `install-browser`
 - `auth-check`
-- `auth-bootstrap`
-- `auth-clear`
+- `login`
+- `logout`
 
 ### Discovery
 

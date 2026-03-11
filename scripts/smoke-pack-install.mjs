@@ -43,7 +43,12 @@ try {
     throw new Error(`Unexpected installed version output: ${versionOutput}`);
   }
 
-  if (!helpOutput.includes(`doordash-cli v${packageVersion}`) || !helpOutput.includes("auth-bootstrap")) {
+  if (
+    !helpOutput.includes(`doordash-cli v${packageVersion}`)
+    || !helpOutput.includes("login")
+    || helpOutput.includes("auth-bootstrap")
+    || helpOutput.includes("auth-clear")
+  ) {
     throw new Error("Installed help output did not include the expected command surface");
   }
 
