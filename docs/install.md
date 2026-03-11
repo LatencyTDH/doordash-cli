@@ -58,6 +58,6 @@ doordash-cli search --query sushi
 
 ## Session reuse
 
-If you already have a compatible signed-in DoorDash browser session available, direct commands may reuse it instead of opening a fresh browser context.
+If you already have a compatible signed-in DoorDash managed-browser session available, direct commands may quietly reuse it instead of opening or navigating a DoorDash tab.
 
 If not, run `doordash-cli login` once to save reusable state for later commands.

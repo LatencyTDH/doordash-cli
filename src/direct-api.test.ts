@@ -5,12 +5,14 @@ import {
   buildAddToCartPayload,
   buildUpdateCartPayload,
   extractExistingOrdersFromApolloCache,
+  hasDoorDashCookies,
   normalizeItemName,
   parseExistingOrderLifecycleStatus,
   parseExistingOrdersResponse,
   parseOptionSelectionsJson,
   parseSearchRestaurantRow,
   resolveAvailableAddressMatch,
+  selectManagedBrowserImportMode,
   type ItemResult,
 } from "./direct-api.js";
 
@@ -159,6 +161,36 @@ test("parseSearchRestaurantRow extracts restaurant metadata from facet rows", ()
     imageUrl: "https://img.cdn4dd.com/example.jpeg",
     url: "https://www.doordash.com/store/24633898/?pickup=false",
   });
+});
+
+test("managed browser import falls back to cookie reuse without opening a DoorDash page", () => {
+  const cookies = [{ domain: ".doordash.com" }];
+
+  assert.equal(hasDoorDashCookies(cookies), true);
+  assert.equal(selectManagedBrowserImportMode({ pageUrls: [], cookies }), "cookies");
+});
+
+test("managed browser import prefers an existing DoorDash page when one is already open", () => {
+  const cookies = [{ domain: ".doordash.com" }];
+
+  assert.equal(
+    selectManagedBrowserImportMode({
+      pageUrls: ["https://github.com/LatencyTDH/doordash-cli/pulls", "https://www.doordash.com/home"],
+      cookies,
+    }),
+    "page",
+  );
+});
+
+test("managed browser import skips unrelated browser contexts", () => {
+  assert.equal(hasDoorDashCookies([{ domain: ".github.com" }]), false);
+  assert.equal(
+    selectManagedBrowserImportMode({
+      pageUrls: ["https://github.com/LatencyTDH/doordash-cli"],
+      cookies: [{ domain: ".github.com" }],
+    }),
+    "skip",
+  );
 });
 
 test("parseOptionSelectionsJson parses structured recursive option selections", () => {

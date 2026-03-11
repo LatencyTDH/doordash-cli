@@ -65,7 +65,7 @@ doordash-cli search --query sushi
 
 If you are running from a checkout without `npm link`, replace `doordash-cli` with `npm run cli --`.
 
-If you already have a compatible signed-in DoorDash browser session available, `auth-check` may reuse it instead of asking you to sign in again.
+If you already have a compatible signed-in DoorDash managed-browser session available, `auth-check` may quietly reuse it instead of asking you to sign in again. Routine direct commands stay quiet; use `login` when you want explicit browser interaction.
 
 ## Command surface
 
