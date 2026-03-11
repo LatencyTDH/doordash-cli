@@ -15,6 +15,8 @@ When a maintainer decides it is time to ship, they run one GitHub Action and the
 
 No release PR. No second merge step. No waiting around for the “real” release after the release workflow.
 
+Public npm publication now exists, but it is still a deliberate maintainer follow-up after the GitHub release flow rather than part of the workflow itself.
+
 ## Why this replaced Release Please
 
 The previous Release Please setup still required two human steps:
@@ -113,13 +115,52 @@ Install and first-run docs should stay in:
 
 Do not treat GitHub Release bodies as the place for a giant evergreen install tutorial.
 
-## npm publish later (issue #12)
+## npm publication
 
-Actual npm publication is still intentionally **out of scope**.
+Public npm publication is live at <https://www.npmjs.com/package/doordash-cli>.
 
-This workflow creates the GitHub Release, tag, tarball, and checksum only. It does **not** publish to npm.
+The GitHub Actions release workflow still creates the release commit, tag, GitHub Release, tarball, and checksum only. It does **not** publish to npm automatically.
 
-When issue #12 is tackled, npm publication should be added deliberately on top of this flow rather than reintroducing ad hoc local publishing.
+Until automation is added intentionally, npm publication is a maintainer step run from an authenticated release machine.
+
+### Release-machine auth
+
+Authenticate once on the release machine and verify the active account before publishing:
+
+```bash
+npm login --auth-type=legacy --registry=https://registry.npmjs.org/
+npm whoami
+```
+
+The maintainer account for this package is `latencytdh`.
+
+### Manual npm publish step
+
+After the GitHub release workflow finishes for `vX.Y.Z`, publish that same release from a clean checkout:
+
+```bash
+git fetch --tags origin
+git checkout vX.Y.Z
+npm ci
+npm run validate
+npm run smoke:pack
+npm publish --access public
+```
+
+Then verify what npm received:
+
+```bash
+npm view doordash-cli version
+npm view doordash-cli dist-tags --json
+```
+
+For an end-to-end user check, install into a clean prefix or environment and run both shipped commands:
+
+```bash
+npm install -g doordash-cli
+doordash-cli --help
+dd-cli --help
+```
 
 ## Validation expectations
 

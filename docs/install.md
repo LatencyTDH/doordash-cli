@@ -1,16 +1,18 @@
 # Install and first run
 
-## Preferred global install
+## Install from npm
 
 ```bash
 npm install -g doordash-cli
 ```
 
-That is the long-term default install path. Once npm publication is live, it installs both lowercase command names: `doordash-cli` and `dd-cli`.
+That installs both lowercase command names: `doordash-cli` and `dd-cli`.
 
-## Install from source today
+Package page: <https://www.npmjs.com/package/doordash-cli>
 
-Before npm publication is enabled, install from a checkout:
+## Install from source instead
+
+If you want the latest unreleased work or a local checkout you can edit, install from a checkout:
 
 ```bash
 git clone https://github.com/LatencyTDH/doordash-cli.git
