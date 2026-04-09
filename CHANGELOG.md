@@ -11,6 +11,17 @@ See [docs/releasing.md](docs/releasing.md) for the maintainer release flow.
 
 ## [0.3.2](https://github.com/LatencyTDH/doordash-cli/compare/v0.3.1...v0.3.2) (2026-04-09)
 
+### Dependencies
+
+* **deps:** bump @hono/node-server from 1.19.11 to 1.19.13 ([#34](https://github.com/LatencyTDH/doordash-cli/issues/34)) ([60ae01d](https://github.com/LatencyTDH/doordash-cli/commit/60ae01d00e06dc8490cf495013a476fb6aef4964))
+* **deps:** bump basic-ftp from 5.2.0 to 5.2.1 ([#35](https://github.com/LatencyTDH/doordash-cli/issues/35)) ([8796dfd](https://github.com/LatencyTDH/doordash-cli/commit/8796dfda69c2615048601858e4617c36e864d1ce))
+* **deps:** bump defu from 6.1.4 to 6.1.6 ([#32](https://github.com/LatencyTDH/doordash-cli/issues/32)) ([b1746bc](https://github.com/LatencyTDH/doordash-cli/commit/b1746bc51521f95d373f83ea6cb649e3722bf4b2))
+* **deps-dev:** bump handlebars from 4.7.8 to 4.7.9 ([#30](https://github.com/LatencyTDH/doordash-cli/issues/30)) ([0eb650e](https://github.com/LatencyTDH/doordash-cli/commit/0eb650e654b1feff2e764bf9204a0e52db7903fd))
+* **deps:** bump hono from 4.12.7 to 4.12.12 ([#33](https://github.com/LatencyTDH/doordash-cli/issues/33)) ([21fa857](https://github.com/LatencyTDH/doordash-cli/commit/21fa8570945909f26669746c73d9279a0931f096))
+* **deps:** bump lodash from 4.17.23 to 4.18.1 ([#36](https://github.com/LatencyTDH/doordash-cli/issues/36)) ([82b3fd2](https://github.com/LatencyTDH/doordash-cli/commit/82b3fd27f41a44eab33332c8b12f2da48d098713))
+* **deps:** bump path-to-regexp from 8.3.0 to 8.4.0 ([#31](https://github.com/LatencyTDH/doordash-cli/issues/31)) ([b07d074](https://github.com/LatencyTDH/doordash-cli/commit/b07d07443cc8614baf4fbe0fe4b703456329cd67))
+* **deps:** bump picomatch from 4.0.3 to 4.0.4 ([#29](https://github.com/LatencyTDH/doordash-cli/issues/29)) ([2c95440](https://github.com/LatencyTDH/doordash-cli/commit/2c95440c4830471ea24690faed29c556f56d2461))
+
 ## [0.3.1](https://github.com/LatencyTDH/doordash-cli/compare/v0.3.0...v0.3.1) (2026-03-11)
 
 ### Bug Fixes

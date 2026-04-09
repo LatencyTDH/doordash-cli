@@ -55,6 +55,7 @@ The project uses Semantic Versioning driven by conventional commits on `main`:
 - `fix:` -> patch release
 - `perf:` -> patch release
 - `deps:` -> patch release
+- `chore(deps):` / `chore(deps-dev):` -> patch release
 - `feat:` -> minor release
 - `!` or `BREAKING CHANGE:` -> breaking release
 
@@ -76,12 +77,14 @@ Release notes and version bumps are derived from the squash commits that land on
 
 - `feat: add nested options support`
 - `fix: handle missing session state`
+- `chore(deps): bump playwright from 1.41.0 to 1.42.0`
 - `feat!: rename auth bootstrap output`
 
 Rules of thumb:
 
 - Use **squash and merge**.
 - Keep the final merged title user-meaningful.
+- Dependabot-style `chore(deps)` / `chore(deps-dev)` squash titles are supported and will show up in the changelog under **Dependencies**.
 - Reserve `!` / `BREAKING CHANGE:` for real breaking surface changes.
 - Do **not** hand-bump versions or create release tags from feature branches.
 
@@ -129,6 +132,12 @@ Recommended setup:
 3. Keep the secret scoped to release automation rather than copying it into multiple systems.
 
 One secret is enough for this repo. No checked-in `.npmrc` token, no extra release-machine credential sprawl.
+
+## Workflow runtime version
+
+The automation runners use Node.js 22.
+
+That keeps CI and release automation on the current LTS track while the published package itself still declares `engines.node >=20` for end users.
 
 ## Changelog and release notes
 
