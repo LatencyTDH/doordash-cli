@@ -19,6 +19,10 @@ function getCurrentVersion() {
   return pkg.version;
 }
 
+function isDependencyCommit(commit) {
+  return commit.type === 'deps' || (commit.type === 'chore' && typeof commit.scope === 'string' && commit.scope.startsWith('deps'));
+}
+
 function summarizeCommits(commits) {
   const summary = {
     breaking: 0,
@@ -39,11 +43,13 @@ function summarizeCommits(commits) {
         break;
       case 'fix':
       case 'perf':
-      case 'deps':
       case 'revert':
         summary.patches += 1;
         break;
       default:
+        if (isDependencyCommit(commit)) {
+          summary.patches += 1;
+        }
         break;
     }
   }
@@ -75,7 +81,7 @@ function whatBump(commits) {
   if (summary.patches > 0) {
     return {
       level: 2,
-      reason: `There ${summary.patches === 1 ? 'is' : 'are'} ${summary.patches} fix/perf/deps/revert commit${summary.patches === 1 ? '' : 's'}.`,
+      reason: `There ${summary.patches === 1 ? 'is' : 'are'} ${summary.patches} patch-level conventional commit${summary.patches === 1 ? '' : 's'} (including dependency updates).`,
     };
   }
 
@@ -124,6 +130,8 @@ module.exports = {
           { type: 'fix', section: 'Bug Fixes' },
           { type: 'perf', section: 'Performance' },
           { type: 'deps', section: 'Dependencies' },
+          { type: 'chore', scope: 'deps', section: 'Dependencies' },
+          { type: 'chore', scope: 'deps-dev', section: 'Dependencies' },
           { type: 'revert', section: 'Reverts', hidden: true },
           { type: 'docs', section: 'Documentation', hidden: true },
           { type: 'refactor', section: 'Refactoring', hidden: true },

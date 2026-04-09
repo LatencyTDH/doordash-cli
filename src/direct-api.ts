@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { chromium, type Browser, type BrowserContext, type Cookie, type Page } from "playwright";
-import { getCookiesPath } from "@striderlabs/mcp-doordash/dist/auth.js";
+import { getCookiesPath, getStorageStatePath } from "./session-storage.js";
 
 const BASE_URL = "https://www.doordash.com";
 const DEFAULT_USER_AGENT =
@@ -3324,6 +3324,3 @@ async function readStoredCookies(): Promise<Cookie[]> {
   }
 }
 
-export function getStorageStatePath(): string {
-  return join(dirname(getCookiesPath()), "storage-state.json");
-}

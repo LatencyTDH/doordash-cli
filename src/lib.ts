@@ -1,4 +1,3 @@
-import { cleanup as browserCleanup } from "@striderlabs/mcp-doordash/dist/browser.js";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -243,7 +242,6 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
 
 export async function shutdown(): Promise<void> {
   await cleanupDirect().catch(() => {});
-  await browserCleanup().catch(() => {});
 }
 
 async function installBrowser(): Promise<{ success: true; message: string; browser: "chromium" }> {
