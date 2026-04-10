@@ -133,11 +133,28 @@ Recommended setup:
 
 One secret is enough for this repo. No checked-in `.npmrc` token, no extra release-machine credential sprawl.
 
+## CI and release guardrails
+
+Pull requests validate the supported runtime matrix before merge:
+
+- Ubuntu on Node.js 20
+- Ubuntu on Node.js 22
+- macOS on Node.js 22
+
+The Ubuntu/Node 22 lane also keeps the packed-install smoke test in CI so the published file list stays honest.
+
+Release-sensitive changes additionally run `npm run release:smoke`, which clones the repo into a disposable temp directory, performs a local `release-it` run with an explicit throwaway version, and verifies the generated changelog, package metadata, git tag, and release artifacts without pushing or publishing anything.
+
+That gives the repo two layers of protection:
+
+- day-to-day PR validation across the declared supported Node majors
+- a release-pipeline rehearsal that catches changelog/package/release regressions before anyone reaches for the manual release button
+
 ## Workflow runtime version
 
-The automation runners use Node.js 22.
+CI exercises Node.js 20 and 22, while release automation itself runs on Node.js 22.
 
-That keeps CI and release automation on the current LTS track while the published package itself still declares `engines.node >=20` for end users.
+That keeps the published package honest about `engines.node >=20` without forcing the release machinery off the current LTS track.
 
 ## Changelog and release notes
 
@@ -154,9 +171,13 @@ Do not treat GitHub Release bodies as the place for a giant evergreen install tu
 
 ## Validation expectations
 
-Before merging release-process changes, the minimum validation is still:
+Before merging release-process changes, the minimum local validation is:
 
 - `npm run validate`
+- `npm run smoke:pack`
+- `npm run release:smoke`
+
+`npm run validate` now includes the changelog-history guard so duplicated release sections or malformed compare-link chains fail fast.
 
 For release tooling changes, also validate as appropriate:
 

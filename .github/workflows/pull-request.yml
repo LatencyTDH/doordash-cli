@@ -14,25 +14,89 @@ concurrency:
 
 jobs:
   validate:
-    name: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: validate (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: 20
+            smoke_pack: false
+          - os: ubuntu-latest
+            node: 22
+            smoke_pack: true
+          - os: macos-latest
+            node: 22
+            smoke_pack: false
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck, build, test, and validate changelog history
+        run: npm run validate
+
+      - name: Smoke-test packed install
+        if: ${{ matrix.smoke_pack }}
+        run: npm run smoke:pack
+
+  release-smoke:
+    name: release smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs:
+      - validate
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect release-sensitive changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            release:
+              - '.github/workflows/pull-request.yml'
+              - '.github/workflows/release.yml'
+              - '.release-it.cjs'
+              - 'scripts/release/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'CHANGELOG.md'
+
+      - name: Set up Node.js
+        if: ${{ steps.changes.outputs.release == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install dependencies
+        if: ${{ steps.changes.outputs.release == 'true' }}
         run: npm ci
 
-      - name: Typecheck, build, and test
-        run: npm run validate
+      - name: Dry-run the release pipeline in a disposable clone
+        if: ${{ steps.changes.outputs.release == 'true' }}
+        run: npm run release:smoke
 
-      - name: Smoke-test packed install
-        run: npm run smoke:pack
+      - name: Skip when release files are untouched
+        if: ${{ steps.changes.outputs.release != 'true' }}
+        run: |
+          echo "Release-sensitive files were unchanged in this pull request; skipping release smoke." >> "$GITHUB_STEP_SUMMARY"

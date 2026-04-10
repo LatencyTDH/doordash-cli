@@ -29,10 +29,12 @@
     "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test dist/*.test.js",
-    "validate": "npm run typecheck && npm test",
+    "check:changelog": "node scripts/release/check-changelog.mjs",
+    "validate": "npm run typecheck && npm test && npm run check:changelog",
     "install:man": "bash scripts/install-manpage.sh",
     "install:browser": "npm run cli -- install-browser",
-    "smoke:pack": "node scripts/smoke-pack-install.mjs"
+    "smoke:pack": "node scripts/smoke-pack-install.mjs",
+    "release:smoke": "node scripts/release/smoke-release.mjs"
   },
   "keywords": [
     "doordash",
