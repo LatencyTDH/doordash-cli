@@ -44,7 +44,6 @@ try {
     dirname(repoRoot),
   );
   run('git', ['checkout', '-B', 'main'], tempDir);
-  run('git', ['branch', '--set-upstream-to=origin/main', 'main'], tempDir);
   run('git', ['config', 'user.name', 'release-smoke[bot]'], tempDir);
   run('git', ['config', 'user.email', 'release-smoke[bot]@users.noreply.github.com'], tempDir);
 
@@ -60,7 +59,7 @@ try {
 
   run(
     'npx',
-    ['release-it', '--ci', '--no-git.push', '--no-github.release', smokeVersion],
+    ['release-it', '--ci', '--no-git.requireBranch', '--no-git.requireUpstream', '--no-git.push', '--no-github.release', smokeVersion],
     tempDir,
     {
       env: {
