@@ -62,22 +62,37 @@ doordash-cli search --query sushi
 
 `doordash-cli login` follows a browser-first flow:
 
-1. try to reuse an already-signed-in browser session if one is already discoverable
-2. if that succeeds, exit immediately without sitting in the 180-second wait path
-3. if needed, open DoorDash in your default browser
-4. wait only until you finish signing in there and the authenticated session becomes importable
-5. import that authenticated session for later direct API calls
+1. check whether the saved local DoorDash session is already still authenticated
+2. if it is, exit immediately without opening a browser
+3. otherwise try to import an already-signed-in discoverable browser session
+4. if that succeeds, save it for later direct API calls and exit immediately
+5. otherwise open DoorDash in your default browser
+6. if the CLI can actually watch a reusable browser connection, wait up to 180 seconds for sign-in to complete and then import that session
+7. if no reusable browser connection is discoverable yet, do only a brief grace check and then exit quickly with troubleshooting guidance instead of burning the full timeout
 
-Direct commands can also quietly reuse/import a discoverable signed-in browser session when that is already available.
+`doordash-cli auth-check` can also quietly reuse/import a discoverable signed-in browser session when that is already available, unless `doordash-cli logout` explicitly disabled that auto-reuse.
 
-`doordash-cli logout` clears the persisted cookies and stored browser state so follow-up commands start from a logged-out local state.
+`doordash-cli logout` clears the persisted cookies and stored browser state, then disables automatic browser-session reuse until you explicitly run `doordash-cli login` again.
 
 ## Browser-session troubleshooting
 
 Normally you should not need to think about browser plumbing; `doordash-cli login` should just open your normal browser and import the session.
 
-Under the hood, the CLI still needs a discoverable browser connection in order to read that signed-in session. If `login` opens DoorDash but times out without importing anything:
+Under the hood, the CLI still needs a discoverable browser connection in order to read that signed-in session. The current discovery order is:
+
+1. `DOORDASH_ATTACHED_BROWSER_CDP_URLS`
+2. `DOORDASH_BROWSER_CDP_URLS`
+3. `DOORDASH_ATTACHED_BROWSER_CDP_URL`
+4. `DOORDASH_BROWSER_CDP_URL`
+5. `DOORDASH_BROWSER_CDP_PORTS`
+6. `DOORDASH_BROWSER_CDP_PORT`
+7. compatibility env vars `DOORDASH_MANAGED_BROWSER_CDP_URL`, `OPENCLAW_BROWSER_CDP_URL`, and `OPENCLAW_OPENCLAW_CDP_URL`
+8. OpenClaw browser config entries from `~/.openclaw/openclaw.json` (top-level browser config, `browser.openclaw`, and profiles `user`, `chrome`, and `openclaw`)
+9. localhost defaults `http://127.0.0.1:18792`, `http://127.0.0.1:18800`, and `http://127.0.0.1:9222`
+
+If `login` opens DoorDash but cannot import anything:
 
 - make sure you finished signing in in the same browser window that opened
+- make sure one of the discovery inputs above actually points at the browser you are using
 - rerun `doordash-cli login`
-- if it still cannot import the session, consult the README/browser troubleshooting notes for environment-specific discovery setup
+- if it still cannot import the session, inspect the browser/session discovery setup rather than waiting through repeated login loops

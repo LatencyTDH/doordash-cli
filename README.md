@@ -9,7 +9,7 @@ It stops before checkout.
 ## Highlights
 
 - **Cart-safe by design** — browse, inspect existing orders, and manage a cart; no checkout, payment, or order mutation.
-- **Browser-first login** — `dd-cli login` opens DoorDash in your normal browser and imports that signed-in session for later direct API calls when it can discover the browser session automatically.
+- **Browser-first login** — `dd-cli login` first reuses saved local auth when it is still valid, then tries to import a discoverable signed-in browser session, and only opens/waits on DoorDash in your normal browser when needed.
 - **Direct API first** — auth, discovery, existing-order, and cart commands use DoorDash consumer-web GraphQL/HTTP rather than DOM clicking.
 - **JSON-friendly** — every command prints structured output.
 - **Fail-closed** — unsupported commands, flags, or unsafe payload shapes are rejected.
@@ -74,11 +74,13 @@ If you are running from a checkout without `npm link`, replace `doordash-cli` wi
 
 `login` follows a browser-first flow:
 
-1. try to reuse an already-signed-in browser session if one is already discoverable
-2. if that succeeds, exit immediately without entering the 180-second wait path
-3. if needed, open DoorDash in your default browser
-4. wait only until you finish signing in there and the authenticated session becomes importable
-5. import that authenticated session for later direct API calls
+1. check whether the saved local DoorDash session is already still authenticated
+2. if it is, exit immediately without opening a browser
+3. otherwise try to import an already-signed-in discoverable browser session
+4. if that succeeds, save it for later direct API calls and exit immediately
+5. otherwise open DoorDash in your default browser
+6. if the CLI can actually watch a reusable browser connection, wait up to 180 seconds for sign-in to complete and then import that session
+7. if no reusable browser connection is discoverable yet, do only a brief grace check and then exit quickly with troubleshooting guidance instead of burning the full timeout
 
 There is no separate managed-Chromium login fallback.
 
@@ -86,17 +88,17 @@ There is no separate managed-Chromium login fallback.
 
 `auth-check` performs a direct `consumer` query and reports whether the saved state appears logged in, plus the default address if DoorDash returns one.
 
-When a reusable signed-in browser session is already discoverable, `auth-check` can quietly import it instead of making you sign in again.
+When a reusable signed-in browser session is already discoverable, `auth-check` can quietly import it instead of making you sign in again, unless `logout` explicitly disabled that auto-reuse.
 
 ### `logout`
 
-`logout` clears the persisted cookies and stored browser state that power later direct API calls, so follow-up commands start from a logged-out local state.
+`logout` clears the persisted cookies and stored browser state that power later direct API calls, then blocks automatic browser-session reuse until you explicitly run `dd-cli login` again. That keeps `logout` from being immediately undone by a still-signed-in browser window.
 
 ### Browser-session troubleshooting
 
 The happy path is `dd-cli login` opening your normal browser and importing the session automatically.
 
-Under the hood, the CLI still needs a discoverable browser connection to read that signed-in session. In most setups this should be handled automatically by the browser/session discovery logic. If `login` opens DoorDash but times out without importing a session, see the install guide for the browser-session troubleshooting notes and rerun `dd-cli login`.
+Under the hood, the CLI still needs a discoverable browser connection to read that signed-in session. If it cannot find one, it now exits quickly instead of sitting through the full login timeout. See the install guide for the exact discovery inputs it checks (environment variables, OpenClaw browser config, and default localhost CDP ports), then rerun `dd-cli login`.
 
 ## Command surface
 

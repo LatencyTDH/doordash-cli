@@ -126,6 +126,10 @@ test("help output shows the direct read-only/cart-safe command surface", () => {
   assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /--version, -v/);
   assert.match(result.stdout, /man dd-cli/);
+  assert.match(result.stdout, /login first checks saved local auth, then tries importing an already-signed-in browser session, then opens DoorDash in your default browser only when needed\./);
+  assert.match(result.stdout, /login only stays in the long wait loop when it has a reusable browser connection it can actually watch; otherwise it exits quickly with troubleshooting guidance\./);
+  assert.match(result.stdout, /auth-check can quietly reuse\/import an already-signed-in browser session when one is available, unless logout explicitly disabled that auto-reuse\./);
+  assert.match(result.stdout, /logout clears saved session files and disables automatic browser-session reuse until the next login\./);
   assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
   assert.doesNotMatch(result.stdout, /auth-bootstrap/);
   assert.doesNotMatch(result.stdout, /auth-clear/);
@@ -142,6 +146,7 @@ test("repository ships man pages for the supported lowercase command names", () 
   assert.match(readFileSync(ddManPath, "utf8"), /\.B login/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-bootstrap/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-clear/);
+  assert.match(readFileSync(ddManPath, "utf8"), /automatic\s+browser-session reuse stays disabled until the next explicit/i);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /managed-browser/i);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /Dd-cli/);
   assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
@@ -190,6 +195,7 @@ test("logout clears persisted session artifacts in the active home directory", a
   const sessionDir = join(tempHome, ".config", "striderlabs-mcp-doordash");
   const cookiesPath = join(sessionDir, "cookies.json");
   const storageStatePath = join(sessionDir, "storage-state.json");
+  const browserImportBlockPath = join(sessionDir, "browser-import-blocked");
   mkdirSync(sessionDir, { recursive: true });
   writeFileSync(cookiesPath, JSON.stringify([{ name: "session", domain: ".doordash.com" }]));
   writeFileSync(storageStatePath, JSON.stringify({ cookies: [], origins: [] }));
@@ -199,11 +205,13 @@ test("logout clears persisted session artifacts in the active home directory", a
     assert.equal(result.status, 0);
     assert.equal(existsSync(cookiesPath), false);
     assert.equal(existsSync(storageStatePath), false);
+    assert.equal(existsSync(browserImportBlockPath), true);
 
     const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.success, true);
     assert.equal(parsed.cookiesPath, cookiesPath);
     assert.equal(parsed.storageStatePath, storageStatePath);
+    assert.match(parsed.message, /disabled until the next `dd-cli login`/);
   } finally {
     await rm(tempHome, { recursive: true, force: true });
   }

@@ -230,6 +230,66 @@ test("selectAttachedBrowserImportMode treats an authenticated browser with DoorD
   );
 });
 
+test("bootstrapAuthSessionWithDeps returns immediately when saved local auth is already valid", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: true,
+    email: "user@example.com",
+    firstName: "Test",
+    lastName: "User",
+    consumerId: "consumer-1",
+    marketId: "market-1",
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  let importCalls = 0;
+  let openCalls = 0;
+  let waitCalls = 0;
+  let markCalls = 0;
+  const logs: string[] = [];
+  const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {},
+    checkPersistedAuth: async () => auth,
+    importBrowserSessionIfAvailable: async () => {
+      importCalls += 1;
+      return true;
+    },
+    markBrowserImportAttempted: () => {
+      markCalls += 1;
+    },
+    getAttachedBrowserCdpCandidates: async () => {
+      throw new Error("should not inspect candidates when saved auth is already valid");
+    },
+    getReachableCdpCandidates: async () => {
+      throw new Error("should not probe reachability when saved auth is already valid");
+    },
+    openUrlInDefaultBrowser: async () => {
+      openCalls += 1;
+      return true;
+    },
+    waitForAttachedBrowserSessionImport: async () => {
+      waitCalls += 1;
+      return true;
+    },
+    checkAuthDirect: async () => {
+      throw new Error("should not re-check auth through the live session when saved auth is already valid");
+    },
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.equal(importCalls, 0);
+  assert.equal(markCalls, 0);
+  assert.equal(openCalls, 0);
+  assert.equal(waitCalls, 0);
+  assert.equal(logs.length, 0);
+  assert.equal(result.isLoggedIn, true);
+  assert.match(result.message, /Already signed in with saved local DoorDash session state/);
+});
+
 test("bootstrapAuthSessionWithDeps returns immediately when an attached browser session is already authenticated", async () => {
   const auth: AuthResult = {
     success: true,
@@ -249,15 +309,17 @@ test("bootstrapAuthSessionWithDeps returns immediately when an attached browser 
   let markCalls = 0;
   const logs: string[] = [];
   const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {},
+    checkPersistedAuth: async () => null,
     importBrowserSessionIfAvailable: async () => true,
     markBrowserImportAttempted: () => {
       markCalls += 1;
     },
     getAttachedBrowserCdpCandidates: async () => {
-      throw new Error("should not inspect candidates on immediate login reuse");
+      throw new Error("should not inspect candidates on immediate browser-session import");
     },
     getReachableCdpCandidates: async () => {
-      throw new Error("should not probe reachability on immediate login reuse");
+      throw new Error("should not probe reachability on immediate browser-session import");
     },
     openUrlInDefaultBrowser: async () => {
       openCalls += 1;
@@ -278,10 +340,10 @@ test("bootstrapAuthSessionWithDeps returns immediately when an attached browser 
   assert.equal(waitCalls, 0);
   assert.equal(logs.length, 0);
   assert.equal(result.isLoggedIn, true);
-  assert.match(result.message, /Reused an existing signed-in browser session/);
+  assert.match(result.message, /Imported an existing signed-in browser session/);
 });
 
-test("bootstrapAuthSessionWithDeps only enters the wait path when auth is not already present", async () => {
+test("bootstrapAuthSessionWithDeps only enters the full wait path when auth is not already present and a browser connection is watchable", async () => {
   const auth: AuthResult = {
     success: true,
     isLoggedIn: true,
@@ -298,8 +360,11 @@ test("bootstrapAuthSessionWithDeps only enters the wait path when auth is not al
   let openCalls = 0;
   let waitCalls = 0;
   let reachableCalls = 0;
+  let waitTimeoutMs = 0;
   const logs: string[] = [];
   const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {},
+    checkPersistedAuth: async () => null,
     importBrowserSessionIfAvailable: async () => false,
     markBrowserImportAttempted: () => {},
     getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
@@ -311,8 +376,9 @@ test("bootstrapAuthSessionWithDeps only enters the wait path when auth is not al
       openCalls += 1;
       return true;
     },
-    waitForAttachedBrowserSessionImport: async () => {
+    waitForAttachedBrowserSessionImport: async (input) => {
       waitCalls += 1;
+      waitTimeoutMs = input.timeoutMs;
       return true;
     },
     checkAuthDirect: async () => auth,
@@ -324,8 +390,52 @@ test("bootstrapAuthSessionWithDeps only enters the wait path when auth is not al
   assert.equal(reachableCalls, 1);
   assert.equal(openCalls, 1);
   assert.equal(waitCalls, 1);
+  assert.equal(waitTimeoutMs, 180_000);
   assert.match(logs.join("\n"), /Opened DoorDash in your default browser/);
+  assert.match(logs.join("\n"), /Detected 1 reusable browser connection/);
   assert.match(result.message, /detected the signed-in session/);
+});
+
+test("bootstrapAuthSessionWithDeps avoids the full wait path when no reusable browser connection is discoverable yet", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: false,
+    email: null,
+    firstName: null,
+    lastName: null,
+    consumerId: null,
+    marketId: null,
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  let waitCalls = 0;
+  let waitTimeoutMs = 0;
+  const logs: string[] = [];
+  const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {},
+    checkPersistedAuth: async () => null,
+    importBrowserSessionIfAvailable: async () => false,
+    markBrowserImportAttempted: () => {},
+    getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
+    getReachableCdpCandidates: async () => [],
+    openUrlInDefaultBrowser: async () => true,
+    waitForAttachedBrowserSessionImport: async (input) => {
+      waitCalls += 1;
+      waitTimeoutMs = input.timeoutMs;
+      return false;
+    },
+    checkAuthDirect: async () => auth,
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.equal(waitCalls, 1);
+  assert.equal(waitTimeoutMs, 10_000);
+  assert.match(logs.join("\n"), /won't keep you waiting for the full login timeout/);
+  assert.match(result.message, /still isn't exposing a reusable browser session/);
 });
 
 test("parseOptionSelectionsJson parses structured recursive option selections", () => {

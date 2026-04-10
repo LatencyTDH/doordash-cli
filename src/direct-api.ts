@@ -3,12 +3,13 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { chromium, type Browser, type BrowserContext, type Cookie, type Page } from "playwright";
-import { getCookiesPath, getStorageStatePath } from "./session-storage.js";
+import { getBrowserImportBlockPath, getCookiesPath, getStorageStatePath } from "./session-storage.js";
 
 const BASE_URL = "https://www.doordash.com";
 const AUTH_BOOTSTRAP_URL = `${BASE_URL}/home`;
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 180_000;
 const AUTH_BOOTSTRAP_POLL_INTERVAL_MS = 2_000;
+const AUTH_BOOTSTRAP_NO_DISCOVERY_GRACE_MS = 10_000;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
@@ -1434,11 +1435,17 @@ class DoorDashDirectSession {
     }
 
     this.attemptedBrowserImport = true;
+    if (await hasBlockedBrowserImport()) {
+      return;
+    }
+
     await importBrowserSessionIfAvailable().catch(() => {});
   }
 }
 
 type BootstrapAuthSessionDeps = {
+  clearBlockedBrowserImport: () => Promise<void>;
+  checkPersistedAuth: () => Promise<AuthResult | null>;
   importBrowserSessionIfAvailable: () => Promise<boolean>;
   markBrowserImportAttempted: () => void;
   getAttachedBrowserCdpCandidates: () => Promise<string[]>;
@@ -1451,10 +1458,7 @@ type BootstrapAuthSessionDeps = {
 
 const session = new DoorDashDirectSession();
 
-export async function checkAuthDirect(): Promise<AuthResult> {
-  const data = await session.graphql<{ consumer: ConsumerGraph | null }>("consumer", CONSUMER_QUERY, {});
-  const consumer = data.consumer ?? null;
-
+function buildAuthResult(consumer: ConsumerGraph | null): AuthResult {
   return {
     success: true,
     isLoggedIn: Boolean(consumer && consumer.isGuest === false),
@@ -1475,7 +1479,22 @@ export async function checkAuthDirect(): Promise<AuthResult> {
   };
 }
 
+export async function checkAuthDirect(): Promise<AuthResult> {
+  const data = await session.graphql<{ consumer: ConsumerGraph | null }>("consumer", CONSUMER_QUERY, {});
+  return buildAuthResult(data.consumer ?? null);
+}
+
 export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDeps): Promise<AuthBootstrapResult> {
+  await deps.clearBlockedBrowserImport().catch(() => {});
+
+  const persistedAuth = await deps.checkPersistedAuth().catch(() => null);
+  if (persistedAuth?.isLoggedIn) {
+    return {
+      ...persistedAuth,
+      message: "Already signed in with saved local DoorDash session state. No browser interaction was needed.",
+    };
+  }
+
   const imported = await deps.importBrowserSessionIfAvailable().catch(() => false);
   deps.markBrowserImportAttempted();
   if (imported) {
@@ -1483,7 +1502,7 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
     return {
       ...auth,
       message: auth.isLoggedIn
-        ? "Reused an existing signed-in browser session and saved it for direct API use."
+        ? "Imported an existing signed-in browser session and saved it for direct API use."
         : "Imported browser session state, but the consumer still appears to be logged out or guest-only.",
     };
   }
@@ -1495,14 +1514,40 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
   deps.log(
     openedBrowser
       ? `Opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`
-      : `Open this URL in your default browser to continue: ${AUTH_BOOTSTRAP_URL}`,
+      : `Couldn't open your default browser automatically. Open this URL to continue: ${AUTH_BOOTSTRAP_URL}`,
   );
-  deps.log("Complete the sign-in in your normal browser window. I will keep watching for that session and import it automatically.");
-  if (reachableCandidates.length > 0) {
-    deps.log(`Detected ${reachableCandidates.length} reusable browser connection(s). Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
-  } else {
-    deps.log(`Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
+
+  if (reachableCandidates.length === 0) {
+    deps.log(
+      "I couldn't find a reusable browser connection yet, so I won't keep you waiting for the full login timeout. I'll watch briefly in case one appears after the browser opens.",
+    );
+
+    const importedAfterGrace = await deps.waitForAttachedBrowserSessionImport({
+      timeoutMs: AUTH_BOOTSTRAP_NO_DISCOVERY_GRACE_MS,
+      pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
+    });
+
+    const auth = await deps.checkAuthDirect();
+    if (importedAfterGrace) {
+      return {
+        ...auth,
+        message: auth.isLoggedIn
+          ? "Opened DoorDash in your default browser, discovered a reusable browser session a few seconds later, and saved it for direct API use."
+          : "Detected browser session state after opening the default browser, but the consumer still appears logged out or guest-only.",
+      };
+    }
+
+    return {
+      ...auth,
+      message: openedBrowser
+        ? "Opened DoorDash in your default browser, but this environment still isn't exposing a reusable browser session the CLI can import. Finish signing in there, make a compatible browser session discoverable, then rerun `dd-cli login`."
+        : "Couldn't open your default browser automatically, and this environment still isn't exposing a reusable browser session the CLI can import. Open the DoorDash home page manually, make a compatible browser session discoverable, then rerun `dd-cli login`.",
+    };
   }
+
+  deps.log(
+    `Detected ${reachableCandidates.length} reusable browser connection(s). Finish the sign-in in that browser window and I'll import it automatically for up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds.`,
+  );
 
   const importedAfterWait = await deps.waitForAttachedBrowserSessionImport({
     timeoutMs: AUTH_BOOTSTRAP_TIMEOUT_MS,
@@ -1521,15 +1566,16 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
 
   return {
     ...auth,
-    message:
-      reachableCandidates.length > 0
-        ? `Opened DoorDash in your default browser and waited ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in browser session was imported. Finish the login in that browser and rerun dd-cli login.`
-        : "Opened DoorDash in your default browser, but could not discover a reusable browser session automatically. If DoorDash is already open and signed in, see the browser-session troubleshooting notes in the README, then rerun dd-cli login.",
+    message: openedBrowser
+      ? `Opened DoorDash in your default browser and watched for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in browser session was imported. Finish the login in that browser and rerun dd-cli login.`
+      : `Couldn't open your default browser automatically, but watched existing browser connections for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds without importing a signed-in DoorDash session. Open ${AUTH_BOOTSTRAP_URL} manually in the watched browser, finish signing in, then rerun dd-cli login.`,
   };
 }
 
 export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
   return bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport,
+    checkPersistedAuth: getPersistedAuthDirect,
     importBrowserSessionIfAvailable,
     markBrowserImportAttempted: () => session.markBrowserImportAttempted(),
     getAttachedBrowserCdpCandidates,
@@ -1546,9 +1592,10 @@ export async function clearStoredSession(): Promise<{ success: true; message: st
   session.resetBrowserImportAttempted();
   await rm(getCookiesPath(), { force: true }).catch(() => {});
   await rm(getStorageStatePath(), { force: true }).catch(() => {});
+  await blockBrowserImport();
   return {
     success: true,
-    message: "DoorDash cookies and stored browser session state cleared.",
+    message: "DoorDash cookies and stored browser session state cleared. Automatic browser-session reuse is disabled until the next `dd-cli login`.",
     cookiesPath: getCookiesPath(),
     storageStatePath: getStorageStatePath(),
   };
@@ -2551,7 +2598,11 @@ async function saveContextState(context: BrowserContext, cookies: Cookie[] | nul
   await writeFile(getCookiesPath(), JSON.stringify(resolvedCookies, null, 2));
 }
 
-async function validatePersistedDirectSessionArtifacts(): Promise<boolean> {
+async function getPersistedAuthDirect(): Promise<AuthResult | null> {
+  if (!(await hasPersistedSessionArtifacts())) {
+    return null;
+  }
+
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   let page: Page | null = null;
@@ -2574,7 +2625,7 @@ async function validatePersistedDirectSessionArtifacts(): Promise<boolean> {
     if (!hasStorage) {
       const cookies = await readStoredCookies();
       if (cookies.length === 0) {
-        return false;
+        return null;
       }
       await context.addCookies(cookies);
     }
@@ -2584,14 +2635,19 @@ async function validatePersistedDirectSessionArtifacts(): Promise<boolean> {
     await page.waitForTimeout(1_000);
 
     const consumerData = await fetchConsumerViaPage(page).catch(() => null);
-    return consumerData?.consumer?.isGuest === false;
+    return buildAuthResult(consumerData?.consumer ?? null);
   } catch {
-    return false;
+    return null;
   } finally {
     await page?.close().catch(() => {});
     await context?.close().catch(() => {});
     await browser?.close().catch(() => {});
   }
+}
+
+async function validatePersistedDirectSessionArtifacts(): Promise<boolean> {
+  const auth = await getPersistedAuthDirect();
+  return auth?.isLoggedIn === true;
 }
 
 export function resolveAttachedBrowserCdpCandidates(
@@ -3550,6 +3606,24 @@ function truncate(value: string, length: number): string {
 
 async function ensureConfigDir(): Promise<void> {
   await mkdir(dirname(getCookiesPath()), { recursive: true });
+}
+
+async function hasBlockedBrowserImport(): Promise<boolean> {
+  try {
+    await readFile(getBrowserImportBlockPath(), "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function blockBrowserImport(): Promise<void> {
+  await ensureConfigDir();
+  await writeFile(getBrowserImportBlockPath(), "logged-out\n");
+}
+
+async function clearBlockedBrowserImport(): Promise<void> {
+  await rm(getBrowserImportBlockPath(), { force: true }).catch(() => {});
 }
 
 async function hasStorageState(): Promise<boolean> {
