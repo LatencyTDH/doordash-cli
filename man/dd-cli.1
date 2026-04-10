@@ -35,20 +35,22 @@ local browser, including the temporary login-window fallback.
 .TP
 .B auth-check
 Verify whether the saved session appears authenticated. This command can also
-quietly reuse or import same-machine Linux Brave/Chrome browser profile state
-or an already-signed-in attachable browser session when one is available,
-unless
+quietly reuse or import same-machine signed-in Chrome/Brave browser profile
+state on supported platforms, or an already-signed-in attachable browser
+session when one is available, unless
 .B logout
 explicitly disabled that auto-reuse.
 .TP
 .B login
 Reuse saved local auth when possible. Otherwise first try to import signed-in
-same-machine Linux Brave/Chrome browser profile state, then a discoverable
-attachable signed-in browser session, and finally open a temporary Chromium
-login window and save that session there. The temporary-browser fallback
-auto-detects completion when it can, and also accepts an explicit Enter
-keypress in the terminal to force an immediate recheck once the page shows the
-user is signed in. If authentication is still not established,
+same-machine Chrome/Brave browser profile state on supported platforms, then a
+discoverable attachable signed-in browser session, and finally open a
+temporary Chromium login window and save that session there. The
+same-machine profile path is preferred on Linux, macOS, and Windows before the
+slower browser-attach or temporary-window fallbacks. The temporary-browser
+fallback auto-detects completion when it can, and also accepts an explicit
+Enter keypress in the terminal to force an immediate recheck once the page
+shows the user is signed in. If authentication is still not established,
 .B login
 exits non-zero.
 .TP
@@ -216,24 +218,53 @@ error codes and exit codes. See
 .I docs/automation-contract.md
 for the canonical contract.
 .SH SESSION STORAGE
-The CLI persists reusable session state under the user's configuration
-directory. The exact file layout is an implementation detail and may evolve over
-time, but the saved state is reused across runs unless cleared with
-.BR logout .
-After
-.BR logout ,
-passive browser-session reuse stays disabled until the next explicit
+The CLI persists reusable session state under a doordash-cli-owned directory.
+By default this is
+.I $XDG_STATE_HOME/doordash-cli
+(or
+.I $XDG_CONFIG_HOME/doordash-cli
+when only that XDG base directory is set) on Linux/XDG-style environments,
+.I ~/Library/Application Support/doordash-cli
+on macOS, and
+.I %APPDATA%\\doordash-cli
+on Windows.
+.PP
+The stored files are
+.I cookies.json
+,
+.I storage-state.json
+,
+and a small
+.I browser-import-blocked
+marker written by
+.B logout
+so passive browser-session reuse stays disabled until the next explicit
 .BR login .
+.PP
+If the canonical doordash-cli-owned directory is empty but legacy state still
+exists under
+.I ~/.config/striderlabs-mcp-doordash
+, the CLI copies that state forward automatically. If that copy cannot yet
+complete, it falls back to the legacy directory instead of breaking existing
+users.
 .SH ENVIRONMENT
 .PP
 In the common case you should not need to configure browser plumbing manually.
-On Linux, the preferred browser-reuse path is a signed-in local Brave or Google
-Chrome profile on the same machine, which does not need CDP/remote debugging.
-For attached-browser reuse, the CLI can also probe compatible CDP URLs/ports
-and a few localhost defaults. If neither same-machine profile import nor an
-attachable browser session is discoverable, login falls back to a temporary
-Chromium window it can watch directly, with an explicit Enter-to-recheck
-fallback in the terminal if automatic detection is not yet convincing. See
+The CLI prefers same-machine signed-in Chrome or Brave profile reuse before
+CDP attach or the temporary Chromium window on Linux, macOS, and Windows.
+Linux imports profile cookies directly; macOS and Windows try the installed
+Chrome/Brave profile directly and keep it only when authenticated DoorDash
+consumer state can be proven. If profile access, decryption, or auth proof is
+ambiguous, the CLI fails closed and moves on.
+.PP
+For attached-browser reuse, the CLI can probe compatible CDP URLs/ports and a
+few localhost defaults. You can override the session-storage directory with
+.B DOORDASH_CLI_SESSION_DIR
+for CI, containers, or per-project isolation. If neither same-machine profile
+reuse nor an attachable browser session is discoverable, login falls back to a
+temporary Chromium window it can watch directly, with an explicit
+Enter-to-recheck fallback in the terminal if automatic detection is not yet
+convincing. See
 .I docs/install.md
 for setup and troubleshooting.
 .SH EXIT STATUS

@@ -9,7 +9,7 @@ It stops before checkout.
 ## Highlights
 
 - **Cart-safe by design** — browse, inspect existing orders, and manage a cart; no checkout, payment, or order mutation.
-- **Browser-first login** — `dd-cli login` reuses saved local auth, then same-machine Linux Brave/Chrome profile state, then attachable signed-in browser sessions when possible, and otherwise opens a temporary login window.
+- **Profile-first login** — `dd-cli login` reuses saved local auth, then same-machine Chrome/Brave profile state on supported platforms, then attachable signed-in browser sessions when possible, and otherwise opens a temporary login window.
 - **Direct API first** — auth, discovery, existing-order, and cart commands use DoorDash consumer-web GraphQL/HTTP rather than DOM clicking.
 - **JSON-friendly** — commands print structured output by default, and `--json` enables a documented automation envelope with stable error codes and exit codes.
 - **Fail-closed** — unsupported commands, flags, or unsafe payload shapes are rejected.
@@ -70,13 +70,26 @@ If you are running from a checkout without `npm link`, replace `doordash-cli` wi
 
 ## Login and session reuse
 
-`login` reuses saved local auth when it is still valid. Otherwise it first tries to import signed-in same-machine Linux Brave/Chrome profile state, then falls back to a discoverable attachable signed-in browser session, and finally opens a temporary Chromium login window it can watch directly. If authentication still is not established, `login` exits non-zero.
+`login` reuses saved local auth when it is still valid. Otherwise it first tries to import signed-in same-machine Chrome/Brave profile state on supported platforms, then falls back to a discoverable attachable signed-in browser session, and finally opens a temporary Chromium login window it can watch directly. If authentication still is not established, `login` exits non-zero.
 
-`auth-check` reports whether the saved state appears logged in and can quietly import same-machine Linux Brave/Chrome profile state or a discoverable attachable signed-in browser session unless `logout` disabled that auto-reuse.
+`auth-check` reports whether the saved state appears logged in and can quietly import same-machine Chrome/Brave profile state on supported platforms or a discoverable attachable signed-in browser session unless `logout` disabled that auto-reuse.
 
 `logout` clears persisted cookies and stored browser state, then keeps passive browser-session reuse disabled until your next explicit `dd-cli login` attempt.
 
-If `login` opens a temporary Chromium window, the CLI now keeps checking automatically and also tells you that you can press Enter to force an immediate recheck once the page already shows you are signed in. That restores the old effective manual-completion path without giving up automatic completion when it works. On Linux, a signed-in local Brave or Google Chrome profile on the same machine is the preferred browser-reuse path and does not need CDP/remote debugging. If that same-machine profile import is unavailable or not signed in, the next reuse path is an attachable browser automation session.
+If `login` opens a temporary Chromium window, the CLI keeps checking automatically and also tells you that you can press Enter to force an immediate recheck once the page already shows you are signed in. On Linux, macOS, and Windows, a same-machine signed-in Google Chrome or Brave profile is the preferred browser-reuse path before CDP attach or the temporary login window. Linux imports profile cookies directly; macOS and Windows bootstrap the installed Chrome/Brave profile directly and only keep the session if the CLI can prove authenticated DoorDash consumer state.
+
+## Session storage
+
+Reusable session state is stored in a doordash-cli-owned directory:
+
+- Linux / other XDG-like environments: `$XDG_STATE_HOME/doordash-cli`, else `$XDG_CONFIG_HOME/doordash-cli` when only that is set, else `~/.local/state/doordash-cli`
+- macOS: `~/Library/Application Support/doordash-cli`
+- Windows: `%APPDATA%\\doordash-cli`
+- Override for CI/containers/automation: `DOORDASH_CLI_SESSION_DIR=/path/to/session-dir`
+
+The CLI stores `cookies.json`, `storage-state.json`, and a small `browser-import-blocked` marker used after `logout`.
+
+If the new canonical directory is empty but the legacy `~/.config/striderlabs-mcp-doordash` state exists, the CLI copies that legacy state forward automatically. If that copy cannot complete yet, it falls back to the legacy directory so existing users keep working.
 
 ## Command surface
 
