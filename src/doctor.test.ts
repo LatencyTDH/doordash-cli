@@ -30,13 +30,13 @@ test("doctor prioritizes actionable remediations and produces a paste-safe human
     },
     paths: {
       homeDir: "/home/test",
-      cookiesPath: "/home/test/.config/striderlabs-mcp-doordash/cookies.json",
-      storageStatePath: "/home/test/.config/striderlabs-mcp-doordash/storage-state.json",
-      browserImportBlockPath: "/home/test/.config/striderlabs-mcp-doordash/browser-import-blocked",
+      cookiesPath: "/home/test/.local/state/doordash-cli/cookies.json",
+      storageStatePath: "/home/test/.local/state/doordash-cli/storage-state.json",
+      browserImportBlockPath: "/home/test/.local/state/doordash-cli/browser-import-blocked",
     },
     inspectFile: async (path) => {
       if (path.endsWith("browser-import-blocked")) {
-        return { displayPath: "~/.config/striderlabs-mcp-doordash/browser-import-blocked", exists: true, sizeBytes: 11 };
+        return { displayPath: "~/.local/state/doordash-cli/browser-import-blocked", exists: true, sizeBytes: 11 };
       }
       return { displayPath: path.replace("/home/test", "~"), exists: false, sizeBytes: null };
     },
@@ -89,7 +89,7 @@ test("doctor prioritizes actionable remediations and produces a paste-safe human
   assert.match(text, /Passive browser-session import is currently blocked/);
   assert.match(text, /doordash-cli login/);
   assert.match(text, /doordash-cli install-browser/);
-  assert.match(text, /~\/\.config\/striderlabs-mcp-doordash\/cookies\.json/);
+  assert.match(text, /~\/\.local\/state\/doordash-cli\/cookies\.json/);
   assert.match(text, /http:\/\/<redacted-host>:9222/);
   assert.doesNotMatch(text, /alice:secret@example\.internal/);
   assert.doesNotMatch(text, /example\.internal:9222\/json\/version\?token=abc/);
@@ -106,9 +106,9 @@ test("doctor supports human and JSON rendering without changing JSON output for 
     },
     paths: {
       homeDir: "/home/test",
-      cookiesPath: "/home/test/.config/striderlabs-mcp-doordash/cookies.json",
-      storageStatePath: "/home/test/.config/striderlabs-mcp-doordash/storage-state.json",
-      browserImportBlockPath: "/home/test/.config/striderlabs-mcp-doordash/browser-import-blocked",
+      cookiesPath: "/home/test/.local/state/doordash-cli/cookies.json",
+      storageStatePath: "/home/test/.local/state/doordash-cli/storage-state.json",
+      browserImportBlockPath: "/home/test/.local/state/doordash-cli/browser-import-blocked",
     },
     inspectFile: async (path) => ({
       displayPath: path.replace("/home/test", "~"),
@@ -161,7 +161,7 @@ test("doctor supports human and JSON rendering without changing JSON output for 
 });
 
 test("paste-safe helpers redact paths and non-loopback browser endpoints", () => {
-  assert.equal(redactPath("/home/test/.config/striderlabs-mcp-doordash/cookies.json", "/home/test"), "~/.config/striderlabs-mcp-doordash/cookies.json");
+  assert.equal(redactPath("/home/test/.local/state/doordash-cli/cookies.json", "/home/test"), "~/.local/state/doordash-cli/cookies.json");
   assert.equal(sanitizeCdpCandidate("http://alice:secret@example.internal:9222/json/version?token=abc"), "http://<redacted-host>:9222");
   assert.equal(sanitizeCdpCandidate("http://127.0.0.1:9222/json/version"), "http://127.0.0.1:9222");
 });

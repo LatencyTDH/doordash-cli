@@ -2961,7 +2961,8 @@ export function preferredBrowserSessionImportStrategies(platform: NodeJS.Platfor
 }
 
 export async function inspectLocalBrowserProfileImportCandidates(): Promise<LocalBrowserProfileImportInspection> {
-  if (process.platform !== "linux") {
+  const targets = resolveSameMachineChromiumProfileTargets();
+  if (targets.length === 0) {
     return {
       supported: false,
       platform: process.platform,
@@ -2970,17 +2971,26 @@ export async function inspectLocalBrowserProfileImportCandidates(): Promise<Loca
   }
 
   const candidates = await Promise.all(
-    LINUX_CHROMIUM_COOKIE_IMPORT_BROWSERS.map(async (browser) => {
-      const userDataDirExists = await stat(browser.userDataDir)
+    targets.map(async (target) => {
+      const userDataDirExists = await stat(target.userDataDir)
         .then((entry) => entry.isDirectory())
         .catch(() => false);
-      const importableProfileNames = userDataDirExists
-        ? (await readLinuxChromiumCookieImports(browser)).map((profileImport) => profileImport.profileName)
-        : [];
+
+      let importableProfileNames: string[] = [];
+      if (userDataDirExists) {
+        importableProfileNames =
+          target.importMode === "linux-cookie-db"
+            ? (await readLinuxChromiumCookieImports({
+                browserLabel: target.browserLabel,
+                safeStorageApplication: target.safeStorageApplication ?? "",
+                userDataDir: target.userDataDir,
+              })).map((profileImport) => profileImport.profileName)
+            : await readChromiumProfileNames(target.userDataDir, { includeDefaultFallback: false });
+      }
 
       return {
-        browserLabel: browser.browserLabel,
-        userDataDir: browser.userDataDir,
+        browserLabel: target.browserLabel,
+        userDataDir: target.userDataDir,
         userDataDirExists,
         importableProfileNames,
         importableProfileCount: importableProfileNames.length,
@@ -4639,7 +4649,10 @@ async function findFirstExistingPath(paths: readonly string[]): Promise<string |
   return null;
 }
 
-async function readChromiumProfileNames(userDataDir: string): Promise<string[]> {
+async function readChromiumProfileNames(
+  userDataDir: string,
+  options: { includeDefaultFallback?: boolean } = {},
+): Promise<string[]> {
   const localStateRaw = await readFile(join(userDataDir, "Local State"), "utf8").catch(() => null);
   const infoCache = asObject(
     asObject(safeJsonParse<Record<string, unknown>>(localStateRaw ?? undefined)?.profile).info_cache,
@@ -4675,7 +4688,11 @@ async function readChromiumProfileNames(userDataDir: string): Promise<string[]> 
     .map((entry) => entry.name)
     .filter((name) => name === "Default" || /^Profile\s+\d+$/i.test(name));
 
-  return dedupeBy(["Default", ...sortedFromLocalState, ...directoryNames], (value) => value);
+  const profileNames = options.includeDefaultFallback === false
+    ? [...sortedFromLocalState, ...directoryNames]
+    : ["Default", ...sortedFromLocalState, ...directoryNames];
+
+  return dedupeBy(profileNames, (value) => value);
 }
 
 async function hasBlockedBrowserImport(): Promise<boolean> {
