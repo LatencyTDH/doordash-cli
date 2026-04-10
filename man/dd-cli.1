@@ -35,14 +35,16 @@ local browser, including the temporary login-window fallback.
 .TP
 .B auth-check
 Verify whether the saved session appears authenticated. This command can also
-quietly reuse or import an already-signed-in browser session when one is
-available, unless
+quietly reuse or import an already-signed-in attachable browser session when
+one is available, unless
 .B logout
 explicitly disabled that auto-reuse.
 .TP
 .B login
 Reuse saved local auth when possible. Otherwise try to import a discoverable
-signed-in browser session, or open a temporary Chromium login window and save
+attachable signed-in browser session. A merely-open Chrome/Brave window is not
+automatically reusable unless the CLI can actually attach to it. If no
+attachable session is available, open a temporary Chromium login window and save
 that session there. The temporary-browser fallback auto-detects completion when
 it can, and also accepts an explicit Enter keypress in the terminal to force an
 immediate recheck once the page shows the user is signed in. If authentication
@@ -214,10 +216,11 @@ passive browser-session reuse stays disabled until the next explicit
 .PP
 In the common case you should not need to configure browser plumbing manually.
 For attached-browser reuse, the CLI can probe compatible CDP URLs/ports and a
-few localhost defaults. If no reusable browser connection is discoverable,
-login falls back to a temporary Chromium window it can watch directly, with an
-explicit Enter-to-recheck fallback in the terminal if automatic detection is not
-yet convincing. See
+few localhost defaults. A merely-open browser window is not automatically
+reusable unless the CLI can actually attach to it. If no attachable browser
+session is discoverable, login falls back to a temporary Chromium window it can
+watch directly, with an explicit Enter-to-recheck fallback in the terminal if
+automatic detection is not yet convincing. See
 .I docs/install.md
 for setup and troubleshooting.
 .SH EXIT STATUS

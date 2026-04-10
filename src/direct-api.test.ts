@@ -15,6 +15,7 @@ import {
   resolveAvailableAddressMatch,
   resolveSystemBrowserOpenCommand,
   selectAttachedBrowserImportMode,
+  summarizeDesktopBrowserReuseGap,
   type AuthResult,
   type ItemResult,
 } from "./direct-api.js";
@@ -206,6 +207,38 @@ test("resolveSystemBrowserOpenCommand stays generic across operating systems", (
   });
 });
 
+test("summarizeDesktopBrowserReuseGap explains why a merely-open Brave window is not reusable", () => {
+  const message = summarizeDesktopBrowserReuseGap({
+    processCommands: [
+      "/bin/bash /usr/bin/brave-browser-stable",
+      "/opt/brave.com/brave/brave",
+      "/opt/brave.com/brave/brave --type=renderer",
+    ],
+    hasAnyDevToolsActivePort: false,
+  });
+
+  assert.match(message ?? "", /Brave is already running on this desktop/i);
+  assert.match(message ?? "", /normal open browser window is not automatically reusable/i);
+  assert.match(message ?? "", /attach to/i);
+});
+
+test("summarizeDesktopBrowserReuseGap stays quiet once the browser exposes attach signals", () => {
+  assert.equal(
+    summarizeDesktopBrowserReuseGap({
+      processCommands: ["/bin/bash /usr/bin/brave-browser-stable --remote-debugging-port=9222"],
+      hasAnyDevToolsActivePort: false,
+    }),
+    null,
+  );
+  assert.equal(
+    summarizeDesktopBrowserReuseGap({
+      processCommands: ["/bin/bash /usr/bin/brave-browser-stable"],
+      hasAnyDevToolsActivePort: true,
+    }),
+    null,
+  );
+});
+
 test("selectAttachedBrowserImportMode treats an authenticated browser with DoorDash cookies as an immediate import candidate", () => {
   assert.equal(
     selectAttachedBrowserImportMode({
@@ -265,6 +298,7 @@ test("bootstrapAuthSessionWithDeps returns immediately when saved local auth is 
     getReachableCdpCandidates: async () => {
       throw new Error("should not probe reachability when saved auth is already valid");
     },
+    describeDesktopBrowserReuseGap: async () => null,
     openUrlInAttachedBrowser: async () => {
       throw new Error("should not try to open an attached browser when saved auth is already valid");
     },
@@ -328,6 +362,7 @@ test("bootstrapAuthSessionWithDeps returns immediately when an attached browser 
     getReachableCdpCandidates: async () => {
       throw new Error("should not probe reachability on immediate browser-session import");
     },
+    describeDesktopBrowserReuseGap: async () => null,
     openUrlInAttachedBrowser: async () => {
       throw new Error("should not open a browser when immediate browser-session import succeeded");
     },
@@ -387,6 +422,7 @@ test("bootstrapAuthSessionWithDeps opens a watchable attached browser session be
       reachableCalls += 1;
       return candidates;
     },
+    describeDesktopBrowserReuseGap: async () => null,
     openUrlInAttachedBrowser: async () => {
       openAttachedCalls += 1;
       return true;
@@ -415,8 +451,8 @@ test("bootstrapAuthSessionWithDeps opens a watchable attached browser session be
   assert.equal(openDefaultCalls, 0);
   assert.equal(waitCalls, 1);
   assert.equal(waitTimeoutMs, 180_000);
-  assert.match(logs.join("\n"), /Opened DoorDash in the reusable browser session I'm watching/);
-  assert.match(logs.join("\n"), /Detected 1 reusable browser connection/);
+  assert.match(logs.join("\n"), /Opened DoorDash in the attachable browser session I'm watching/);
+  assert.match(logs.join("\n"), /Detected 1 attachable browser session/);
   assert.match(result.message, /saved it for direct API use/);
 });
 
@@ -444,6 +480,7 @@ test("bootstrapAuthSessionWithDeps falls back to a managed browser login window 
     markBrowserImportAttempted: () => {},
     getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
     getReachableCdpCandidates: async () => [],
+    describeDesktopBrowserReuseGap: async () => null,
     openUrlInAttachedBrowser: async () => false,
     openUrlInDefaultBrowser: async () => true,
     waitForAttachedBrowserSessionImport: async () => {
@@ -474,6 +511,51 @@ test("bootstrapAuthSessionWithDeps falls back to a managed browser login window 
   assert.equal(result.isLoggedIn, true);
 });
 
+test("bootstrapAuthSessionWithDeps logs why an already-open desktop browser still is not reusable", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: true,
+    email: "user@example.com",
+    firstName: "Test",
+    lastName: "User",
+    consumerId: "consumer-1",
+    marketId: "market-1",
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  const logs: string[] = [];
+  const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {},
+    checkPersistedAuth: async () => null,
+    importBrowserSessionIfAvailable: async () => false,
+    markBrowserImportAttempted: () => {},
+    getAttachedBrowserCdpCandidates: async () => [],
+    getReachableCdpCandidates: async () => [],
+    describeDesktopBrowserReuseGap: async () =>
+      "I can see Brave is already running on this desktop, but it is not exposing an attachable browser automation session right now.",
+    openUrlInAttachedBrowser: async () => false,
+    openUrlInDefaultBrowser: async () => true,
+    waitForAttachedBrowserSessionImport: async () => false,
+    waitForManagedBrowserLogin: async () => ({
+      status: "completed",
+      completion: "automatic",
+      auth,
+    }),
+    canPromptForManagedBrowserConfirmation: () => true,
+    checkAuthDirect: async () => auth,
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.match(logs.join("\n"), /Brave is already running on this desktop/i);
+  assert.match(logs.join("\n"), /couldn't find an attachable browser session I can reuse/i);
+  assert.equal(result.success, true);
+  assert.equal(result.isLoggedIn, true);
+});
+
 test("bootstrapAuthSessionWithDeps restores an explicit Enter-style completion path for the managed browser fallback", async () => {
   const auth: AuthResult = {
     success: true,
@@ -496,6 +578,7 @@ test("bootstrapAuthSessionWithDeps restores an explicit Enter-style completion p
     markBrowserImportAttempted: () => {},
     getAttachedBrowserCdpCandidates: async () => [],
     getReachableCdpCandidates: async () => [],
+    describeDesktopBrowserReuseGap: async () => null,
     openUrlInAttachedBrowser: async () => false,
     openUrlInDefaultBrowser: async () => true,
     waitForAttachedBrowserSessionImport: async () => false,
@@ -541,6 +624,7 @@ test("bootstrapAuthSessionWithDeps returns a bounded failure instead of a dead-e
     markBrowserImportAttempted: () => {},
     getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
     getReachableCdpCandidates: async () => [],
+    describeDesktopBrowserReuseGap: async () => null,
     openUrlInAttachedBrowser: async () => false,
     openUrlInDefaultBrowser: async () => true,
     waitForAttachedBrowserSessionImport: async (input) => {
@@ -593,6 +677,7 @@ test("bootstrapAuthSessionWithDeps falls back to quick troubleshooting guidance 
     markBrowserImportAttempted: () => {},
     getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
     getReachableCdpCandidates: async () => [],
+    describeDesktopBrowserReuseGap: async () => null,
     openUrlInAttachedBrowser: async () => false,
     openUrlInDefaultBrowser: async () => true,
     waitForAttachedBrowserSessionImport: async (input) => {
@@ -614,7 +699,7 @@ test("bootstrapAuthSessionWithDeps falls back to quick troubleshooting guidance 
   assert.match(logs.join("\n"), /won't keep you waiting for the full login timeout/i);
   assert.equal(result.success, false);
   assert.equal(result.isLoggedIn, false);
-  assert.match(result.message, /still isn't exposing a reusable browser session/);
+  assert.match(result.message, /still isn't exposing an attachable browser session/);
 });
 
 test("bootstrapAuthSessionWithDeps clears the logout block before an explicit login reuses an attached browser session", async () => {
@@ -647,6 +732,7 @@ test("bootstrapAuthSessionWithDeps clears the logout block before an explicit lo
     markBrowserImportAttempted: () => {},
     getAttachedBrowserCdpCandidates: async () => [],
     getReachableCdpCandidates: async () => [],
+    describeDesktopBrowserReuseGap: async () => null,
     openUrlInAttachedBrowser: async () => false,
     openUrlInDefaultBrowser: async () => false,
     waitForAttachedBrowserSessionImport: async () => false,

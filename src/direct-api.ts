@@ -1475,6 +1475,7 @@ type BootstrapAuthSessionDeps = {
   markBrowserImportAttempted: () => void;
   getAttachedBrowserCdpCandidates: () => Promise<string[]>;
   getReachableCdpCandidates: (candidates: string[]) => Promise<string[]>;
+  describeDesktopBrowserReuseGap: () => Promise<string | null>;
   openUrlInAttachedBrowser: (input: { cdpUrl: string; targetUrl: string }) => Promise<boolean>;
   openUrlInDefaultBrowser: (targetUrl: string) => Promise<boolean>;
   waitForAttachedBrowserSessionImport: (input: { timeoutMs: number; pollIntervalMs: number }) => Promise<boolean>;
@@ -1616,13 +1617,13 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
 
     deps.log(
       openedAttachedBrowser
-        ? `Opened DoorDash in the reusable browser session I'm watching: ${AUTH_BOOTSTRAP_URL}`
+        ? `Opened DoorDash in the attachable browser session I'm watching: ${AUTH_BOOTSTRAP_URL}`
         : openedDefaultBrowser
-          ? `Found a reusable browser connection, but couldn't drive it directly, so I opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`
-          : `Detected a reusable browser connection, but couldn't open DoorDash automatically. Open this URL in that watched browser to continue: ${AUTH_BOOTSTRAP_URL}`,
+          ? `Found an attachable browser session, but couldn't drive it directly, so I opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`
+          : `Detected an attachable browser session, but couldn't open DoorDash automatically. Open this URL in that watched browser to continue: ${AUTH_BOOTSTRAP_URL}`,
     );
     deps.log(
-      `Detected ${reachableCandidates.length} reusable browser connection(s). Finish the sign-in in that browser window and I'll import it automatically for up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds.`,
+      `Detected ${reachableCandidates.length} attachable browser session(s). Finish the sign-in in that browser window and I'll import it automatically for up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds.`,
     );
 
     const importedAfterWait = await deps.waitForAttachedBrowserSessionImport({
@@ -1633,21 +1634,26 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
     const auth = await deps.checkAuthDirect();
     if (importedAfterWait) {
       return auth.isLoggedIn
-        ? buildAuthBootstrapSuccess(auth, "Opened DoorDash in a reusable browser session, detected the signed-in consumer state, and saved it for direct API use.")
+        ? buildAuthBootstrapSuccess(auth, "Opened DoorDash in an attachable browser session, detected the signed-in consumer state, and saved it for direct API use.")
         : buildAuthBootstrapFailure(auth, "Detected browser session state in the watched browser, but the consumer still appears logged out or guest-only.");
     }
 
     return buildAuthBootstrapFailure(
       auth,
       openedAttachedBrowser || openedDefaultBrowser
-        ? `Opened DoorDash and watched reusable browser connections for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in DoorDash session was imported. Finish the login in that watched browser and rerun dd-cli login.`
-        : `Watched reusable browser connections for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds without importing a signed-in DoorDash session. Open ${AUTH_BOOTSTRAP_URL} manually in the watched browser, finish signing in, then rerun dd-cli login.`,
+        ? `Opened DoorDash and watched attachable browser sessions for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in DoorDash session was imported. Finish the login in that watched browser and rerun dd-cli login.`
+        : `Watched attachable browser sessions for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds without importing a signed-in DoorDash session. Open ${AUTH_BOOTSTRAP_URL} manually in the watched browser, finish signing in, then rerun dd-cli login.`,
     );
+  }
+
+  const desktopBrowserReuseGap = await deps.describeDesktopBrowserReuseGap().catch(() => null);
+  if (desktopBrowserReuseGap) {
+    deps.log(desktopBrowserReuseGap);
   }
 
   const manualManagedConfirmationAvailable = deps.canPromptForManagedBrowserConfirmation();
   deps.log(
-    "I couldn't find a reusable browser connection, so I'm opening a temporary Chromium login window that the CLI can watch directly.",
+    "I couldn't find an attachable browser session I can reuse, so I'm opening a temporary Chromium login window that the CLI can watch directly.",
   );
   deps.log(
     manualManagedConfirmationAvailable
@@ -1687,7 +1693,7 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
       : `Couldn't open the temporary Chromium login window or your default browser automatically. Open this URL to continue: ${AUTH_BOOTSTRAP_URL}`,
   );
   deps.log(
-    "This environment still isn't exposing a reusable browser session the CLI can import, so I won't keep you waiting for the full login timeout. Once you've exposed a compatible browser session, rerun `dd-cli login`.",
+    "This environment still isn't exposing an attachable browser session the CLI can import, so I won't keep you waiting for the full login timeout. Once you've exposed an attachable browser session, rerun `dd-cli login`.",
   );
 
   const importedAfterGrace = await deps.waitForAttachedBrowserSessionImport({
@@ -1698,15 +1704,15 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
   const auth = await deps.checkAuthDirect();
   if (importedAfterGrace) {
     return auth.isLoggedIn
-      ? buildAuthBootstrapSuccess(auth, "A reusable browser session appeared a few seconds later and was saved for direct API use.")
+      ? buildAuthBootstrapSuccess(auth, "An attachable browser session appeared a few seconds later and was saved for direct API use.")
       : buildAuthBootstrapFailure(auth, "Detected browser session state after opening the browser, but the consumer still appears logged out or guest-only.");
   }
 
   return buildAuthBootstrapFailure(
     auth,
     openedBrowser
-      ? "Opened DoorDash in your default browser, but this environment still isn't exposing a reusable browser session the CLI can import. Finish signing in there, make a compatible browser session discoverable, then rerun `dd-cli login`."
-      : "Couldn't open a watchable browser automatically, and this environment still isn't exposing a reusable browser session the CLI can import. Open the DoorDash home page manually, make a compatible browser session discoverable, then rerun `dd-cli login`.",
+      ? "Opened DoorDash in your default browser, but this environment still isn't exposing an attachable browser session the CLI can import. Finish signing in there, make an attachable browser session discoverable, then rerun `dd-cli login`."
+      : "Couldn't open a watchable browser automatically, and this environment still isn't exposing an attachable browser session the CLI can import. Open the DoorDash home page manually, make an attachable browser session discoverable, then rerun `dd-cli login`.",
   );
 }
 
@@ -1718,6 +1724,7 @@ export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
     markBrowserImportAttempted: () => session.markBrowserImportAttempted(),
     getAttachedBrowserCdpCandidates,
     getReachableCdpCandidates,
+    describeDesktopBrowserReuseGap,
     openUrlInAttachedBrowser,
     openUrlInDefaultBrowser,
     waitForAttachedBrowserSessionImport,
@@ -3058,6 +3065,47 @@ function isPlaywrightBrowserInstallMissingError(error: unknown): boolean {
   return message.includes("executable doesn't exist") || message.includes("please run the following command") || message.includes("playwright install");
 }
 
+type KnownDesktopBrowser = {
+  label: string;
+  processMatchers: readonly RegExp[];
+  devToolsActivePortPaths: readonly string[];
+};
+
+const KNOWN_DESKTOP_BROWSERS: readonly KnownDesktopBrowser[] = [
+  {
+    label: "Brave",
+    processMatchers: [/\bbrave-browser(?:-stable)?\b/i, /\/brave(?:$|\s)/i],
+    devToolsActivePortPaths: [
+      join(homedir(), ".config", "BraveSoftware", "Brave-Browser", "DevToolsActivePort"),
+      join(homedir(), "Library", "Application Support", "BraveSoftware", "Brave-Browser", "DevToolsActivePort"),
+    ],
+  },
+  {
+    label: "Google Chrome",
+    processMatchers: [/\bgoogle-chrome(?:-stable|-beta|-unstable)?\b/i, /\/google-chrome(?:$|\s)/i],
+    devToolsActivePortPaths: [
+      join(homedir(), ".config", "google-chrome", "DevToolsActivePort"),
+      join(homedir(), "Library", "Application Support", "Google", "Chrome", "DevToolsActivePort"),
+    ],
+  },
+  {
+    label: "Microsoft Edge",
+    processMatchers: [/\bmicrosoft-edge(?:-stable|-beta|-dev)?\b/i, /\/microsoft-edge(?:$|\s)/i],
+    devToolsActivePortPaths: [
+      join(homedir(), ".config", "microsoft-edge", "DevToolsActivePort"),
+      join(homedir(), "Library", "Application Support", "Microsoft Edge", "DevToolsActivePort"),
+    ],
+  },
+  {
+    label: "Chromium",
+    processMatchers: [/\bchromium-browser\b/i, /\bchromium\b/i],
+    devToolsActivePortPaths: [
+      join(homedir(), ".config", "chromium", "DevToolsActivePort"),
+      join(homedir(), "Library", "Application Support", "Chromium", "DevToolsActivePort"),
+    ],
+  },
+] as const;
+
 function normalizeCdpCandidate(value: string): string {
   return value.trim().replace(/\/$/, "");
 }
@@ -3113,6 +3161,103 @@ function appendBrowserConfigCandidate(candidates: string[], value: unknown): voi
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
+  });
+}
+
+function detectRunningDesktopBrowser(processCommands: readonly string[]): KnownDesktopBrowser | null {
+  const filteredCommands = processCommands
+    .map((command) => command.trim())
+    .filter((command) => command.length > 0)
+    .filter((command) => !/chrome-devtools-mcp/i.test(command));
+
+  for (const browser of KNOWN_DESKTOP_BROWSERS) {
+    const preferredMatch = filteredCommands.some(
+      (command) => !/--type=|crashpad|zygote/i.test(command) && browser.processMatchers.some((matcher) => matcher.test(command)),
+    );
+    if (preferredMatch) {
+      return browser;
+    }
+  }
+
+  for (const browser of KNOWN_DESKTOP_BROWSERS) {
+    if (filteredCommands.some((command) => browser.processMatchers.some((matcher) => matcher.test(command)))) {
+      return browser;
+    }
+  }
+
+  return null;
+}
+
+function hasRemoteDebuggingSignal(processCommands: readonly string[]): boolean {
+  return processCommands.some((command) => /--remote-debugging-(?:port|pipe)(?:=|\b)/i.test(command));
+}
+
+export function summarizeDesktopBrowserReuseGap(input: {
+  processCommands: readonly string[];
+  hasAnyDevToolsActivePort: boolean;
+}): string | null {
+  const browser = detectRunningDesktopBrowser(input.processCommands);
+  if (!browser) {
+    return null;
+  }
+
+  if (hasRemoteDebuggingSignal(input.processCommands) || input.hasAnyDevToolsActivePort) {
+    return null;
+  }
+
+  return `I can see ${browser.label} is already running on this desktop, but it is not exposing an attachable browser automation session right now. A normal open browser window is not automatically reusable; dd-cli can only import a browser session it can actually attach to.`;
+}
+
+async function captureCommandStdout(command: string, args: string[]): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+    const stdout: Buffer[] = [];
+
+    child.once("error", reject);
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      stdout.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdout).toString("utf8"));
+        return;
+      }
+
+      reject(new Error(`${command} exited with code ${code ?? "null"}`));
+    });
+  });
+}
+
+async function listProcessCommands(targetPlatform: NodeJS.Platform = process.platform): Promise<string[]> {
+  if (targetPlatform === "win32") {
+    return [];
+  }
+
+  const args = targetPlatform === "darwin" ? ["-axo", "command="] : ["-eo", "command="];
+  const stdout = await captureCommandStdout("ps", args).catch(() => "");
+  return stdout
+    .split(/\r?\n/)
+    .map((command) => command.trim())
+    .filter((command) => command.length > 0);
+}
+
+async function hasAnyKnownDevToolsActivePort(): Promise<boolean> {
+  for (const browser of KNOWN_DESKTOP_BROWSERS) {
+    for (const path of browser.devToolsActivePortPaths) {
+      if ((await readFile(path, "utf8").catch(() => null)) !== null) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+async function describeDesktopBrowserReuseGap(): Promise<string | null> {
+  const processCommands = await listProcessCommands();
+  return summarizeDesktopBrowserReuseGap({
+    processCommands,
+    hasAnyDevToolsActivePort: await hasAnyKnownDevToolsActivePort(),
   });
 }
 
