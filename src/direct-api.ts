@@ -2815,12 +2815,29 @@ export function selectAttachedBrowserImportMode(input: {
   return "skip";
 }
 
+export type BrowserSessionImportStrategy = "local-linux-chromium-profile" | "attached-browser-cdp";
+
+export function preferredBrowserSessionImportStrategies(platform: NodeJS.Platform): readonly BrowserSessionImportStrategy[] {
+  return platform === "linux"
+    ? (["local-linux-chromium-profile", "attached-browser-cdp"] as const)
+    : (["attached-browser-cdp"] as const);
+}
+
 async function importBrowserSessionIfAvailable(): Promise<boolean> {
-  if (await importBrowserSessionFromCdpCandidates(await getAttachedBrowserCdpCandidates())) {
-    return true;
+  for (const strategy of preferredBrowserSessionImportStrategies(process.platform)) {
+    if (strategy === "local-linux-chromium-profile") {
+      if (await importBrowserSessionFromLocalChromiumProfiles()) {
+        return true;
+      }
+      continue;
+    }
+
+    if (await importBrowserSessionFromCdpCandidates(await getAttachedBrowserCdpCandidates())) {
+      return true;
+    }
   }
 
-  return await importBrowserSessionFromLocalChromiumProfiles();
+  return false;
 }
 
 async function importBrowserSessionFromLocalChromiumProfiles(): Promise<boolean> {
@@ -3367,7 +3384,7 @@ export function summarizeDesktopBrowserReuseGap(input: {
     return null;
   }
 
-  return `I can see ${browser.label} is already running on this desktop, but it is not exposing an attachable browser automation session right now. A normal open browser window is not automatically reusable; dd-cli can only import a browser session it can actually attach to.`;
+  return `I can see ${browser.label} is already running on this desktop, but dd-cli still couldn't reuse it automatically. It is not exposing an attachable browser automation session right now, and no importable signed-in DoorDash browser profile state was found.`;
 }
 
 async function captureCommandStdout(
