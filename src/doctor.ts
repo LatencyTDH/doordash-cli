@@ -193,7 +193,7 @@ export async function runDoctorWithDeps(deps: DoctorDeps): Promise<DoctorResult>
   const sameMachineProfileImport: DoctorResult["sameMachineProfileImport"] = !sameMachineRaw.supported
     ? {
         status: "info",
-        detail: "Same-machine browser profile import is only supported on Linux today.",
+        detail: "Same-machine browser profile import is not supported on this platform. Linux, macOS, and Windows are supported today.",
         supported: false,
         candidates: sameMachineRaw.candidates.map((candidate: any) => ({
           ...candidate,
@@ -477,7 +477,7 @@ function buildRecommendations(input: {
       priority: priority++,
       title: "If you want passive same-machine reuse, sign into DoorDash in a local Brave or Google Chrome profile on this machine.",
       details:
-        "On Linux, that is the preferred browser reuse path and does not require CDP or remote debugging when the browser profile contains reusable DoorDash auth state.",
+        "On Linux, macOS, and Windows, that is the preferred browser reuse path before CDP attach or the temporary managed-browser fallback when the local Chrome/Brave profile contains reusable DoorDash auth state.",
       command: null,
     });
   }

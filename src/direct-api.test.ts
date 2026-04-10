@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import {
   bootstrapAuthSessionWithDeps,
   buildAddConsumerAddressPayload,
@@ -13,6 +14,7 @@ import {
   parseSearchRestaurantRow,
   preferredBrowserSessionImportStrategies,
   resolveAttachedBrowserCdpCandidates,
+  resolveSameMachineChromiumProfileTargets,
   resolveAvailableAddressMatch,
   resolveSystemBrowserOpenCommand,
   selectAttachedBrowserImportMode,
@@ -241,10 +243,103 @@ test("summarizeDesktopBrowserReuseGap stays quiet once the browser exposes attac
   );
 });
 
-test("preferredBrowserSessionImportStrategies prefers same-machine linux profile imports before CDP attach", () => {
-  assert.deepEqual(preferredBrowserSessionImportStrategies("linux"), ["local-linux-chromium-profile", "attached-browser-cdp"]);
-  assert.deepEqual(preferredBrowserSessionImportStrategies("darwin"), ["attached-browser-cdp"]);
-  assert.deepEqual(preferredBrowserSessionImportStrategies("win32"), ["attached-browser-cdp"]);
+test("resolveSameMachineChromiumProfileTargets resolves platform-specific Chrome/Brave profile locations", () => {
+  assert.deepEqual(
+    resolveSameMachineChromiumProfileTargets({
+      platform: "linux",
+      homeDir: "/tmp/linux-home",
+      env: {} as NodeJS.ProcessEnv,
+    }),
+    [
+      {
+        browserLabel: "Brave",
+        userDataDir: join("/tmp/linux-home", ".config", "BraveSoftware", "Brave-Browser"),
+        importMode: "linux-cookie-db",
+        safeStorageApplication: "brave",
+        executableCandidates: [],
+      },
+      {
+        browserLabel: "Google Chrome",
+        userDataDir: join("/tmp/linux-home", ".config", "google-chrome"),
+        importMode: "linux-cookie-db",
+        safeStorageApplication: "chrome",
+        executableCandidates: [],
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    resolveSameMachineChromiumProfileTargets({
+      platform: "darwin",
+      homeDir: "/Users/example",
+      env: {} as NodeJS.ProcessEnv,
+    }),
+    [
+      {
+        browserLabel: "Brave",
+        userDataDir: join("/Users/example", "Library", "Application Support", "BraveSoftware", "Brave-Browser"),
+        importMode: "persistent-context",
+        safeStorageApplication: null,
+        executableCandidates: [
+          "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+          join("/Users/example", "Applications", "Brave Browser.app", "Contents", "MacOS", "Brave Browser"),
+        ],
+      },
+      {
+        browserLabel: "Google Chrome",
+        userDataDir: join("/Users/example", "Library", "Application Support", "Google", "Chrome"),
+        importMode: "persistent-context",
+        safeStorageApplication: null,
+        executableCandidates: [
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          join("/Users/example", "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
+        ],
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    resolveSameMachineChromiumProfileTargets({
+      platform: "win32",
+      homeDir: "C:\\Users\\Example",
+      env: {
+        LOCALAPPDATA: "C:\\Users\\Example\\AppData\\Local",
+        ProgramFiles: "C:\\Program Files",
+        "ProgramFiles(x86)": "C:\\Program Files (x86)",
+      } as NodeJS.ProcessEnv,
+    }),
+    [
+      {
+        browserLabel: "Brave",
+        userDataDir: join("C:\\Users\\Example\\AppData\\Local", "BraveSoftware", "Brave-Browser", "User Data"),
+        importMode: "persistent-context",
+        safeStorageApplication: null,
+        executableCandidates: [
+          join("C:\\Users\\Example\\AppData\\Local", "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+          join("C:\\Program Files", "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+          join("C:\\Program Files (x86)", "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+        ],
+      },
+      {
+        browserLabel: "Google Chrome",
+        userDataDir: join("C:\\Users\\Example\\AppData\\Local", "Google", "Chrome", "User Data"),
+        importMode: "persistent-context",
+        safeStorageApplication: null,
+        executableCandidates: [
+          join("C:\\Users\\Example\\AppData\\Local", "Google", "Chrome", "Application", "chrome.exe"),
+          join("C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
+          join("C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
+        ],
+      },
+    ],
+  );
+});
+
+test("preferredBrowserSessionImportStrategies prefers same-machine profile imports before CDP attach on supported platforms", () => {
+  assert.deepEqual(preferredBrowserSessionImportStrategies("linux"), ["same-machine-chromium-profile", "attached-browser-cdp"]);
+  assert.deepEqual(preferredBrowserSessionImportStrategies("darwin"), ["same-machine-chromium-profile", "attached-browser-cdp"]);
+  assert.deepEqual(preferredBrowserSessionImportStrategies("win32"), ["same-machine-chromium-profile", "attached-browser-cdp"]);
+  assert.deepEqual(preferredBrowserSessionImportStrategies("freebsd"), ["attached-browser-cdp"]);
 });
 
 test("selectAttachedBrowserImportMode treats an authenticated browser with DoorDash cookies as an immediate import candidate", () => {

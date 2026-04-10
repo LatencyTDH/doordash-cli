@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -168,12 +168,12 @@ const LINUX_CHROMIUM_COOKIE_IMPORT_BROWSERS = [
   {
     browserLabel: "Brave",
     safeStorageApplication: "brave",
-    userDataDir: join(homedir(), ".config", "BraveSoftware", "Brave-Browser"),
+    userDataDirSegments: [".config", "BraveSoftware", "Brave-Browser"],
   },
   {
     browserLabel: "Google Chrome",
     safeStorageApplication: "chrome",
-    userDataDir: join(homedir(), ".config", "google-chrome"),
+    userDataDirSegments: [".config", "google-chrome"],
   },
 ] as const;
 
@@ -2815,7 +2815,124 @@ export function selectAttachedBrowserImportMode(input: {
   return "skip";
 }
 
-export type BrowserSessionImportStrategy = "local-linux-chromium-profile" | "attached-browser-cdp";
+export type BrowserSessionImportStrategy = "same-machine-chromium-profile" | "attached-browser-cdp";
+
+export type SameMachineChromiumProfileTarget = {
+  browserLabel: "Brave" | "Google Chrome";
+  userDataDir: string;
+  importMode: "linux-cookie-db" | "persistent-context";
+  safeStorageApplication: string | null;
+  executableCandidates: string[];
+};
+
+type SameMachineChromiumProfileResolutionInput = {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  homeDir?: string;
+};
+
+function trimEnvPathValue(value: string | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function resolveWindowsLocalAppDataDir(input: SameMachineChromiumProfileResolutionInput): string {
+  const env = input.env ?? process.env;
+  const homeDir = input.homeDir ?? homedir();
+  return trimEnvPathValue(env.LOCALAPPDATA) ?? join(trimEnvPathValue(env.USERPROFILE) ?? homeDir, "AppData", "Local");
+}
+
+function resolveWindowsProgramFilesDirs(input: SameMachineChromiumProfileResolutionInput): string[] {
+  const env = input.env ?? process.env;
+  const candidates = [
+    trimEnvPathValue(env.ProgramFiles),
+    trimEnvPathValue(env["ProgramFiles(x86)"]),
+  ].filter((value): value is string => Boolean(value));
+
+  return dedupeBy(candidates, (value) => value.toLowerCase());
+}
+
+export function resolveSameMachineChromiumProfileTargets(
+  input: SameMachineChromiumProfileResolutionInput = {},
+): readonly SameMachineChromiumProfileTarget[] {
+  const platform = input.platform ?? process.platform;
+  const homeDir = input.homeDir ?? homedir();
+
+  if (platform === "linux") {
+    return LINUX_CHROMIUM_COOKIE_IMPORT_BROWSERS.map((browser) => ({
+      browserLabel: browser.browserLabel,
+      userDataDir: join(homeDir, ...browser.userDataDirSegments),
+      importMode: "linux-cookie-db" as const,
+      safeStorageApplication: browser.safeStorageApplication,
+      executableCandidates: [],
+    }));
+  }
+
+  if (platform === "darwin") {
+    return [
+      {
+        browserLabel: "Brave",
+        userDataDir: join(homeDir, "Library", "Application Support", "BraveSoftware", "Brave-Browser"),
+        importMode: "persistent-context",
+        safeStorageApplication: null,
+        executableCandidates: [
+          "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+          join(homeDir, "Applications", "Brave Browser.app", "Contents", "MacOS", "Brave Browser"),
+        ],
+      },
+      {
+        browserLabel: "Google Chrome",
+        userDataDir: join(homeDir, "Library", "Application Support", "Google", "Chrome"),
+        importMode: "persistent-context",
+        safeStorageApplication: null,
+        executableCandidates: [
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          join(homeDir, "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
+        ],
+      },
+    ] as const;
+  }
+
+  if (platform === "win32") {
+    const localAppDataDir = resolveWindowsLocalAppDataDir(input);
+    const programFilesDirs = resolveWindowsProgramFilesDirs(input);
+
+    return [
+      {
+        browserLabel: "Brave",
+        userDataDir: join(localAppDataDir, "BraveSoftware", "Brave-Browser", "User Data"),
+        importMode: "persistent-context",
+        safeStorageApplication: null,
+        executableCandidates: dedupeBy(
+          [
+            join(localAppDataDir, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            ...programFilesDirs.map((baseDir) => join(baseDir, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")),
+          ],
+          (value) => value.toLowerCase(),
+        ),
+      },
+      {
+        browserLabel: "Google Chrome",
+        userDataDir: join(localAppDataDir, "Google", "Chrome", "User Data"),
+        importMode: "persistent-context",
+        safeStorageApplication: null,
+        executableCandidates: dedupeBy(
+          [
+            join(localAppDataDir, "Google", "Chrome", "Application", "chrome.exe"),
+            ...programFilesDirs.map((baseDir) => join(baseDir, "Google", "Chrome", "Application", "chrome.exe")),
+          ],
+          (value) => value.toLowerCase(),
+        ),
+      },
+    ] as const;
+  }
+
+  return [];
+}
 
 export type LocalBrowserProfileImportCandidate = {
   browserLabel: string;
@@ -2838,13 +2955,14 @@ export type AttachedBrowserCdpInspection = {
 };
 
 export function preferredBrowserSessionImportStrategies(platform: NodeJS.Platform): readonly BrowserSessionImportStrategy[] {
-  return platform === "linux"
-    ? (["local-linux-chromium-profile", "attached-browser-cdp"] as const)
+  return ["linux", "darwin", "win32"].includes(platform)
+    ? (["same-machine-chromium-profile", "attached-browser-cdp"] as const)
     : (["attached-browser-cdp"] as const);
 }
 
 export async function inspectLocalBrowserProfileImportCandidates(): Promise<LocalBrowserProfileImportInspection> {
-  if (process.platform !== "linux") {
+  const targets = resolveSameMachineChromiumProfileTargets();
+  if (targets.length === 0) {
     return {
       supported: false,
       platform: process.platform,
@@ -2853,17 +2971,26 @@ export async function inspectLocalBrowserProfileImportCandidates(): Promise<Loca
   }
 
   const candidates = await Promise.all(
-    LINUX_CHROMIUM_COOKIE_IMPORT_BROWSERS.map(async (browser) => {
-      const userDataDirExists = await stat(browser.userDataDir)
+    targets.map(async (target) => {
+      const userDataDirExists = await stat(target.userDataDir)
         .then((entry) => entry.isDirectory())
         .catch(() => false);
-      const importableProfileNames = userDataDirExists
-        ? (await readLinuxChromiumCookieImports(browser)).map((profileImport) => profileImport.profileName)
-        : [];
+
+      let importableProfileNames: string[] = [];
+      if (userDataDirExists) {
+        importableProfileNames =
+          target.importMode === "linux-cookie-db"
+            ? (await readLinuxChromiumCookieImports({
+                browserLabel: target.browserLabel,
+                safeStorageApplication: target.safeStorageApplication ?? "",
+                userDataDir: target.userDataDir,
+              })).map((profileImport) => profileImport.profileName)
+            : await readChromiumProfileNames(target.userDataDir, { includeDefaultFallback: false });
+      }
 
       return {
-        browserLabel: browser.browserLabel,
-        userDataDir: browser.userDataDir,
+        browserLabel: target.browserLabel,
+        userDataDir: target.userDataDir,
         userDataDirExists,
         importableProfileNames,
         importableProfileCount: importableProfileNames.length,
@@ -2880,8 +3007,8 @@ export async function inspectLocalBrowserProfileImportCandidates(): Promise<Loca
 
 async function importBrowserSessionIfAvailable(): Promise<boolean> {
   for (const strategy of preferredBrowserSessionImportStrategies(process.platform)) {
-    if (strategy === "local-linux-chromium-profile") {
-      if (await importBrowserSessionFromLocalChromiumProfiles()) {
+    if (strategy === "same-machine-chromium-profile") {
+      if (await importBrowserSessionFromSameMachineChromiumProfiles()) {
         return true;
       }
       continue;
@@ -2895,27 +3022,106 @@ async function importBrowserSessionIfAvailable(): Promise<boolean> {
   return false;
 }
 
-async function importBrowserSessionFromLocalChromiumProfiles(): Promise<boolean> {
-  if (process.platform !== "linux") {
+async function importBrowserSessionFromSameMachineChromiumProfiles(): Promise<boolean> {
+  const originalArtifacts = await snapshotStoredSessionArtifacts();
+
+  for (const target of resolveSameMachineChromiumProfileTargets()) {
+    const imported =
+      target.importMode === "linux-cookie-db"
+        ? await importBrowserSessionFromLinuxChromiumProfiles(target)
+        : await importBrowserSessionFromPersistentChromiumProfile(target);
+    if (imported) {
+      return true;
+    }
+
+    await restoreStoredSessionArtifacts(originalArtifacts);
+  }
+
+  return false;
+}
+
+async function importBrowserSessionFromLinuxChromiumProfiles(target: SameMachineChromiumProfileTarget): Promise<boolean> {
+  if (process.platform !== "linux" || target.importMode !== "linux-cookie-db" || !target.safeStorageApplication) {
     return false;
   }
 
-  const originalArtifacts = await snapshotStoredSessionArtifacts();
+  const profileImports = await readLinuxChromiumCookieImports({
+    browserLabel: target.browserLabel,
+    safeStorageApplication: target.safeStorageApplication,
+    userDataDir: target.userDataDir,
+  });
+  for (const profileImport of profileImports) {
+    if (!hasDoorDashCookies(profileImport.cookies)) {
+      continue;
+    }
 
-  for (const browser of LINUX_CHROMIUM_COOKIE_IMPORT_BROWSERS) {
-    const profileImports = await readLinuxChromiumCookieImports(browser);
-    for (const profileImport of profileImports) {
-      if (!hasDoorDashCookies(profileImport.cookies)) {
+    await writeStoredSessionArtifacts(profileImport.cookies);
+    const persistedAuth = await inspectPersistedAuthDirect();
+    if (persistedAuth?.isLoggedIn) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function importBrowserSessionFromPersistentChromiumProfile(target: SameMachineChromiumProfileTarget): Promise<boolean> {
+  if (target.importMode !== "persistent-context") {
+    return false;
+  }
+
+  if (!(await pathExists(target.userDataDir))) {
+    return false;
+  }
+
+  const executablePath = await findFirstExistingPath(target.executableCandidates);
+  if (!executablePath) {
+    return false;
+  }
+
+  const profileNames = await readChromiumProfileNames(target.userDataDir);
+  for (const profileName of profileNames) {
+    let context: BrowserContext | null = null;
+    let page: Page | null = null;
+    try {
+      context = await chromium.launchPersistentContext(target.userDataDir, {
+        headless: true,
+        executablePath,
+        args: [
+          "--disable-blink-features=AutomationControlled",
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          `--profile-directory=${profileName}`,
+        ],
+        userAgent: DEFAULT_USER_AGENT,
+        locale: "en-US",
+        viewport: { width: 1280, height: 900 },
+      });
+
+      page = context.pages()[0] ?? (await context.newPage());
+      await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+      await page.waitForTimeout(1_000).catch(() => {});
+
+      const consumerData = await fetchConsumerViaPage(page).catch(() => null);
+      const consumer = consumerData?.consumer ?? null;
+      if (!consumer || consumer.isGuest !== false) {
         continue;
       }
 
-      await writeStoredSessionArtifacts(profileImport.cookies);
-      const persistedAuth = await inspectPersistedAuthDirect();
-      if (persistedAuth?.isLoggedIn) {
-        return true;
+      const cookies = await context.cookies();
+      if (!hasDoorDashCookies(cookies)) {
+        continue;
       }
 
-      await restoreStoredSessionArtifacts(originalArtifacts);
+      await saveContextState(context, cookies);
+      if (await validatePersistedDirectSessionArtifacts()) {
+        return true;
+      }
+    } catch {
+      continue;
+    } finally {
+      await page?.close().catch(() => {});
+      await context?.close().catch(() => {});
     }
   }
 
@@ -4422,6 +4628,71 @@ async function readLinuxChromiumCookieImports(input: {
   } catch {
     return [];
   }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findFirstExistingPath(paths: readonly string[]): Promise<string | null> {
+  for (const path of paths) {
+    if (await pathExists(path)) {
+      return path;
+    }
+  }
+
+  return null;
+}
+
+async function readChromiumProfileNames(
+  userDataDir: string,
+  options: { includeDefaultFallback?: boolean } = {},
+): Promise<string[]> {
+  const localStateRaw = await readFile(join(userDataDir, "Local State"), "utf8").catch(() => null);
+  const infoCache = asObject(
+    asObject(safeJsonParse<Record<string, unknown>>(localStateRaw ?? undefined)?.profile).info_cache,
+  );
+  const sortedFromLocalState = Object.entries(infoCache)
+    .flatMap(([profileName, info]) => {
+      if (!profileName.trim()) {
+        return [];
+      }
+
+      const infoObject = asObject(info);
+      const activeTime = typeof infoObject.active_time === "number" ? infoObject.active_time : Number(infoObject.active_time ?? 0);
+      return [
+        {
+          profileName,
+          activeTime: Number.isFinite(activeTime) ? activeTime : 0,
+        },
+      ];
+    })
+    .sort((left, right) => {
+      if (left.profileName === "Default" && right.profileName !== "Default") {
+        return -1;
+      }
+      if (right.profileName === "Default" && left.profileName !== "Default") {
+        return 1;
+      }
+      return right.activeTime - left.activeTime;
+    })
+    .map((entry) => entry.profileName);
+
+  const directoryNames = (await readdir(userDataDir, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => name === "Default" || /^Profile\s+\d+$/i.test(name));
+
+  const profileNames = options.includeDefaultFallback === false
+    ? [...sortedFromLocalState, ...directoryNames]
+    : ["Default", ...sortedFromLocalState, ...directoryNames];
+
+  return dedupeBy(profileNames, (value) => value);
 }
 
 async function hasBlockedBrowserImport(): Promise<boolean> {

@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { EXIT_CODES } from "./automation-contract.js";
 import { commandExitCode, loginFailureAsCliError, parseArgv, version } from "./cli.js";
 import { SAFE_COMMANDS, assertAllowedFlags, assertSafeCommand } from "./lib.js";
+import { resolveCanonicalSessionConfigDir } from "./session-storage.js";
 
 const distDir = dirname(fileURLToPath(import.meta.url));
 const binPath = join(distDir, "bin.js");
@@ -157,11 +158,12 @@ test("help output shows the direct read-only/cart-safe command surface", () => {
   assert.match(result.stdout, /--json \[true\|false\]/);
   assert.match(result.stdout, /stable automation envelope/i);
   assert.match(result.stdout, /man dd-cli/);
-  assert.match(result.stdout, /login reuses saved local auth when possible, otherwise first tries same-machine Linux Brave\/Chrome profile import, then attachable signed-in browser sessions, then a temporary Chromium login window\./);
+  assert.match(result.stdout, /login reuses saved local auth when possible, otherwise first tries same-machine Chrome\/Brave profile import on supported platforms, then attachable signed-in browser sessions, then a temporary Chromium login window\./);
   assert.match(result.stdout, /login auto-detects completion when it can; in the temporary-browser fallback you can also press Enter to force an immediate recheck once the page shows you are signed in\./);
   assert.match(result.stdout, /login exits non-zero if authentication is still not established\./);
-  assert.match(result.stdout, /auth-check reports saved-session status and can quietly reuse\/import same-machine Linux Brave\/Chrome profile state or an attachable signed-in browser session unless logout disabled that auto-reuse\./);
+  assert.match(result.stdout, /auth-check reports saved-session status and can quietly reuse\/import same-machine Chrome\/Brave profile state on supported platforms or an attachable signed-in browser session unless logout disabled that auto-reuse\./);
   assert.match(result.stdout, /logout clears saved session files and keeps passive browser-session reuse off until the next explicit login attempt\./);
+  assert.match(result.stdout, /DOORDASH_CLI_SESSION_DIR/);
   assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
   assert.doesNotMatch(result.stdout, /auth-bootstrap/);
   assert.doesNotMatch(result.stdout, /auth-clear/);
@@ -180,7 +182,7 @@ test("repository ships man pages for the supported lowercase command names", () 
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-bootstrap/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-clear/);
   assert.match(readFileSync(ddManPath, "utf8"), /passive\s+browser-session reuse stays disabled until the next explicit/i);
-  assert.match(readFileSync(ddManPath, "utf8"), /same-machine Linux Brave\/Chrome browser profile/i);
+  assert.match(readFileSync(ddManPath, "utf8"), /same-machine (?:signed-in )?(?:Chrome\/Brave|Brave\/Chrome|Chrome or Brave|Brave or Chrome) browser profile/i);
   assert.match(readFileSync(ddManPath, "utf8"), /temporary\s+Chromium\s+window/i);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /Dd-cli/);
   assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
@@ -278,7 +280,18 @@ test("login failure can be represented as a structured auth error", () => {
 
 test("logout clears persisted session artifacts in the active home directory", async () => {
   const tempHome = await mkdtemp(join(tmpdir(), "doordash-cli-home-"));
-  const sessionDir = join(tempHome, ".config", "striderlabs-mcp-doordash");
+  const env = {
+    HOME: tempHome,
+    XDG_STATE_HOME: "",
+    XDG_CONFIG_HOME: "",
+    DOORDASH_CLI_SESSION_DIR: "",
+    DOORDASH_CLI_CONFIG_DIR: "",
+  } as NodeJS.ProcessEnv;
+  const sessionDir = resolveCanonicalSessionConfigDir({
+    platform: process.platform,
+    homeDir: tempHome,
+    env,
+  });
   const cookiesPath = join(sessionDir, "cookies.json");
   const storageStatePath = join(sessionDir, "storage-state.json");
   const browserImportBlockPath = join(sessionDir, "browser-import-blocked");
@@ -287,7 +300,7 @@ test("logout clears persisted session artifacts in the active home directory", a
   writeFileSync(storageStatePath, JSON.stringify({ cookies: [], origins: [] }));
 
   try {
-    const result = runCli(["logout"], { HOME: tempHome });
+    const result = runCli(["logout"], env);
     assert.equal(result.status, 0);
     assert.equal(existsSync(cookiesPath), false);
     assert.equal(existsSync(storageStatePath), false);

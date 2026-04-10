@@ -30,13 +30,13 @@ Check whether you already have reusable session state:
 doordash-cli auth-check
 ```
 
-If your saved local state is still valid, this exits immediately. Otherwise it first tries to reuse same-machine Linux Brave/Chrome profile state, then a discoverable attachable signed-in browser session, and finally falls back to a temporary Chromium login window the CLI can watch directly. In that temporary-browser fallback, the CLI keeps checking automatically and you can also press Enter in the terminal to force an immediate recheck once the page shows you are signed in:
+If your saved local state is still valid, this exits immediately. Otherwise it first tries to reuse same-machine Chrome/Brave profile state on supported platforms, then a discoverable attachable signed-in browser session, and finally falls back to a temporary Chromium login window the CLI can watch directly. In that temporary-browser fallback, the CLI keeps checking automatically and you can also press Enter in the terminal to force an immediate recheck once the page shows you are signed in:
 
 ```bash
 doordash-cli login
 ```
 
-Reset saved session state when you want a clean logged-out start. This also disables passive browser-session reuse until your next explicit `doordash-cli login`:
+Reset saved session state when you want a clean logged-out start. This also disables passive browser-session reuse until your next explicit `doordash-cli login`. If you need per-project or CI-isolated state, set `DOORDASH_CLI_SESSION_DIR` before running the command:
 
 ```bash
 doordash-cli logout
