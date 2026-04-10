@@ -1,0 +1,19 @@
+{
+  "updateCartItemApiParams": {
+    "cartId": "90a554a1-cc69-462b-8860-911ddf2d7f88",
+    "cartItemId": "3b231d03-5a72-4636-8d12-c8769d706d45",
+    "itemId": "876658890",
+    "quantity": 1,
+    "storeId": "1721744",
+    "purchaseTypeOptions": {
+      "purchaseType": "PURCHASE_TYPE_UNSPECIFIED",
+      "continuousQuantity": 0,
+      "unit": null
+    },
+    "cartFilter": null
+  },
+  "fulfillmentContext": {
+    "shouldUpdateFulfillment": false
+  },
+  "returnCartFromOrderService": false
+}

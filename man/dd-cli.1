@@ -1,4 +1,4 @@
-.TH DD-CLI 1 "2026-04-10" "doordash-cli 0.3.3" "User Commands"
+.TH DD-CLI 1 "2026-04-10" "doordash-cli 0.4.2" "User Commands"
 .SH NAME
 dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, read-only existing-order inspection, and cart management
 .SH SYNOPSIS
@@ -102,6 +102,11 @@ Show usage information.
 .BR -v , " --version"
 Show the packaged CLI version.
 .TP
+.BI --json " [true|false]"
+Wrap output in a stable automation envelope. In this mode the CLI writes one
+JSON document to standard output on success or standard error on failure,
+including stable error codes and exit codes.
+.TP
 .BI --address " ADDRESS"
 Freeform delivery address for
 .BR set-address .
@@ -201,8 +206,15 @@ doordash-cli add-to-cart \
   --options-json '[{"groupId":"703393388","optionId":"4716032529"},{"groupId":"703393389","optionId":"4716042466"}]'
 .EE
 .SH OUTPUT
-Commands print JSON on standard output so they can be piped into shell tools,
-parsers, or scripts.
+By default, supported commands print structured JSON on standard output.
+.PP
+For machine integrations, prefer
+.BR --json .
+That mode wraps responses in a stable automation envelope, writes success JSON
+on standard output, writes error JSON on standard error, and includes explicit
+error codes and exit codes. See
+.I docs/automation-contract.md
+for the canonical contract.
 .SH SESSION STORAGE
 The CLI persists reusable session state under the user's configuration
 directory. The exact file layout is an implementation detail and may evolve over
@@ -230,7 +242,19 @@ for setup and troubleshooting.
 Success, including help and no-argument usage output.
 .TP
 .B 1
-Validation error, blocked command, unsupported flag, or runtime failure.
+Internal or otherwise unclassified CLI failure.
+.TP
+.B 2
+Usage or validation failure.
+.TP
+.B 3
+Unsupported or blocked command.
+.TP
+.B 4
+Authentication was not established.
+.TP
+.B 5
+Remote DoorDash/API failure.
 .SH SAFETY
 The CLI is intentionally limited to session, discovery, read-only
 existing-order inspection, and cart management. Dangerous commands such as
@@ -258,5 +282,6 @@ into the user's local manpath, typically
 on Linux.
 .SH SEE ALSO
 .BR doordash-cli (1),
+.I docs/automation-contract.md,
 .BR npm (1),
 .BR man (1)

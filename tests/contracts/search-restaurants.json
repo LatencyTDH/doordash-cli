@@ -1,0 +1,28 @@
+[
+  {
+    "id": "24633898",
+    "name": "Poke Bowl",
+    "description": "$$ \u2022 Hawaiian, Seafood Restaurant",
+    "cuisines": [
+      "Hawaiian, Seafood Restaurant"
+    ],
+    "isRetail": false,
+    "eta": "1.0 mi \u2022 32 min",
+    "deliveryFee": "$0 delivery fee over $7",
+    "imageUrl": "https://img.cdn4dd.com/example.jpeg",
+    "url": "https://www.doordash.com/store/24633898/?pickup=false"
+  },
+  {
+    "id": "99887766",
+    "name": "Neighborhood Mart",
+    "description": "$ \u2022 Convenience, Retail",
+    "cuisines": [
+      "Convenience, Retail"
+    ],
+    "isRetail": true,
+    "eta": "18 min",
+    "deliveryFee": "$1.99 delivery fee",
+    "imageUrl": "https://img.cdn4dd.com/mart.jpeg",
+    "url": "https://www.doordash.com/store/99887766/?pickup=false"
+  }
+]

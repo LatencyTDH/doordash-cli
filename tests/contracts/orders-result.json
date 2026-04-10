@@ -1,0 +1,137 @@
+[
+  {
+    "id": "order-row-1",
+    "orderUuid": "order-uuid-1",
+    "deliveryUuid": "delivery-uuid-1",
+    "createdAt": "2026-03-03T12:00:00Z",
+    "submittedAt": "2026-03-03T12:01:00Z",
+    "cancelledAt": null,
+    "fulfilledAt": null,
+    "lifecycleStatus": "in-progress",
+    "isActive": true,
+    "hasLiveTracking": true,
+    "pollingIntervalSeconds": 30,
+    "specialInstructions": null,
+    "isReorderable": false,
+    "isGift": false,
+    "isPickup": false,
+    "isRetail": false,
+    "isMerchantShipping": false,
+    "containsAlcohol": false,
+    "fulfillmentType": "DELIVERY",
+    "shoppingProtocol": "STANDARD",
+    "orderFilterType": "ACTIVE",
+    "creator": null,
+    "deliveryAddress": null,
+    "store": {
+      "id": "store-1",
+      "name": "Burger Spot",
+      "businessName": "Burger Spot",
+      "phoneNumber": null,
+      "fulfillsOwnDeliveries": null,
+      "customerArrivedPickupInstructions": null,
+      "rerouteStoreId": null
+    },
+    "grandTotal": null,
+    "itemCount": 1,
+    "items": [
+      {
+        "id": "line-1",
+        "name": "Burger",
+        "quantity": 1,
+        "specialInstructions": null,
+        "substitutionPreferences": null,
+        "originalItemPrice": null,
+        "purchaseType": null,
+        "purchaseQuantity": null,
+        "fulfillQuantity": null,
+        "extras": []
+      }
+    ],
+    "likelyOutOfStockItems": [],
+    "recurringOrderDetails": null,
+    "bundleOrderInfo": null,
+    "cancellationPendingRefundState": null
+  },
+  {
+    "id": "order-row-2",
+    "orderUuid": "order-uuid-2",
+    "deliveryUuid": "delivery-uuid-2",
+    "createdAt": "2026-03-02T12:00:00Z",
+    "submittedAt": null,
+    "cancelledAt": null,
+    "fulfilledAt": "2026-03-02T12:50:00Z",
+    "lifecycleStatus": "fulfilled",
+    "isActive": false,
+    "hasLiveTracking": false,
+    "pollingIntervalSeconds": null,
+    "specialInstructions": null,
+    "isReorderable": true,
+    "isGift": false,
+    "isPickup": false,
+    "isRetail": false,
+    "isMerchantShipping": false,
+    "containsAlcohol": false,
+    "fulfillmentType": "DELIVERY",
+    "shoppingProtocol": "STANDARD",
+    "orderFilterType": "PAST",
+    "creator": null,
+    "deliveryAddress": null,
+    "store": {
+      "id": "store-2",
+      "name": "Sushi Place",
+      "businessName": "Sushi Place",
+      "phoneNumber": null,
+      "fulfillsOwnDeliveries": null,
+      "customerArrivedPickupInstructions": null,
+      "rerouteStoreId": null
+    },
+    "grandTotal": {
+      "unitAmount": 2599,
+      "currency": "USD",
+      "decimalPlaces": 2,
+      "displayString": "$25.99",
+      "sign": null
+    },
+    "itemCount": 1,
+    "items": [
+      {
+        "id": "line-2",
+        "name": "Salmon Roll",
+        "quantity": 2,
+        "specialInstructions": "extra ginger",
+        "substitutionPreferences": "substitute",
+        "originalItemPrice": 1299,
+        "purchaseType": "PURCHASE_TYPE_UNIT",
+        "purchaseQuantity": {
+          "quantity": 2,
+          "unit": "ea"
+        },
+        "fulfillQuantity": {
+          "quantity": 2,
+          "unit": "ea"
+        },
+        "extras": [
+          {
+            "menuItemExtraId": "extra-1",
+            "name": "Sauces",
+            "options": [
+              {
+                "menuExtraOptionId": "option-1",
+                "name": "Soy Sauce",
+                "description": "low sodium",
+                "price": 0,
+                "quantity": 1,
+                "extras": []
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "likelyOutOfStockItems": [],
+    "recurringOrderDetails": null,
+    "bundleOrderInfo": null,
+    "cancellationPendingRefundState": null
+  }
+]

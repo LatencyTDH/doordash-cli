@@ -1,0 +1,62 @@
+{
+  "ROOT_QUERY": {
+    "getConsumerOrdersWithDetails({\"includeCancelled\":true,\"limit\":10,\"offset\":0})": [
+      {
+        "__ref": "ConsumerOrder:1"
+      }
+    ]
+  },
+  "ConsumerOrder:1": {
+    "id": "row-1",
+    "orderUuid": "order-uuid-1",
+    "deliveryUuid": "delivery-uuid-1",
+    "createdAt": "2026-03-04T12:00:00Z",
+    "submittedAt": "2026-03-04T12:01:00Z",
+    "pollingInterval": 20,
+    "isReorderable": false,
+    "isGift": false,
+    "isPickup": false,
+    "isRetail": false,
+    "isMerchantShipping": false,
+    "containsAlcohol": false,
+    "fulfillmentType": "DELIVERY",
+    "shoppingProtocol": "STANDARD",
+    "orderFilterType": "ACTIVE",
+    "store": {
+      "__ref": "Store:1"
+    },
+    "orders": [
+      {
+        "__ref": "GroupedOrder:1"
+      }
+    ],
+    "grandTotal": {
+      "displayString": "$19.99",
+      "unitAmount": 1999,
+      "currency": "USD",
+      "decimalPlaces": 2,
+      "sign": null
+    },
+    "likelyOosItems": []
+  },
+  "Store:1": {
+    "id": "store-1",
+    "name": "Burger Spot",
+    "business": {
+      "name": "Burger Spot"
+    }
+  },
+  "GroupedOrder:1": {
+    "id": "group-1",
+    "items": [
+      {
+        "__ref": "OrderItem:1"
+      }
+    ]
+  },
+  "OrderItem:1": {
+    "id": "line-1",
+    "name": "Burger",
+    "quantity": 1
+  }
+}

@@ -2,6 +2,16 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  CliError,
+  EXIT_CODES,
+  buildAutomationErrorEnvelope,
+  buildAutomationSuccessEnvelope,
+  exitCodeForCliError,
+  parseJsonFlag,
+  shouldPrintUsage,
+  toCliError,
+} from "./automation-contract.js";
 
 const UNICODE_DASH_PREFIX = /^[\u2012\u2013\u2014\u2015\u2212]+/u;
 const FLAG_BODY = /^[A-Za-z0-9][A-Za-z0-9-]*(=.*)?$/;
@@ -24,6 +34,7 @@ export function usage(): string {
     "Meta:",
     "  --help, -h",
     "  --version, -v",
+    "  --json [true|false]",
     "",
     "Safe commands:",
     "  install-browser",
@@ -42,6 +53,7 @@ export function usage(): string {
     "",
     "Notes:",
     "  - Run with no arguments to show this help.",
+    "  - --json wraps supported output in a stable automation envelope with explicit error codes and exit codes.",
     "  - Common Unicode long dashes are normalized for flags, so —help / –help work too.",
     "  - Installed command names are lowercase only: dd-cli and doordash-cli.",
     "  - install-browser downloads the bundled Playwright Chromium runtime used when the CLI needs a local browser.",
@@ -59,6 +71,7 @@ export function usage(): string {
     "",
     "Examples:",
     "  dd-cli --help",
+    "  dd-cli --json auth-check",
     "  dd-cli install-browser",
     "  dd-cli search --query sushi",
     "  dd-cli orders --active-only",
@@ -92,14 +105,11 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
   const flags: Record<string, string> = {};
 
   let command: string | undefined;
-  if (tokens[0] !== undefined && !looksLikeFlagToken(tokens[0])) {
-    command = tokens.shift();
-  }
 
   for (let i = 0; i < tokens.length; i += 1) {
     const rawToken = tokens[i];
     if (rawToken === undefined) {
-      throw new Error("Unexpected empty argument");
+      throw CliError.usage("usage_error", "Unexpected empty argument");
     }
 
     const token = normalizeOptionToken(rawToken);
@@ -114,15 +124,42 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
       continue;
     }
 
+    if (token === "--json") {
+      const next = tokens[i + 1];
+      if (next === undefined || looksLikeFlagToken(next)) {
+        flags.json = "true";
+        continue;
+      }
+
+      if (command === undefined && !next.startsWith("-")) {
+        const normalizedNext = next.trim().toLowerCase();
+        if (!["true", "1", "yes", "on", "false", "0", "no", "off"].includes(normalizedNext)) {
+          flags.json = "true";
+          continue;
+        }
+      }
+
+      flags.json = next;
+      i += 1;
+      continue;
+    }
+
     if (!token.startsWith("--")) {
-      throw new Error(`Unexpected positional argument: ${rawToken}`);
+      if (command === undefined) {
+        command = rawToken;
+        continue;
+      }
+
+      throw CliError.usage("usage_error", `Unexpected positional argument: ${rawToken}`, {
+        token: rawToken,
+      });
     }
 
     const inlineEquals = token.indexOf("=");
     if (inlineEquals !== -1) {
       const key = token.slice(2, inlineEquals);
       if (!key) {
-        throw new Error("Empty flag name");
+        throw CliError.usage("usage_error", "Empty flag name");
       }
       flags[key] = token.slice(inlineEquals + 1);
       continue;
@@ -130,7 +167,7 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
 
     const key = token.slice(2);
     if (!key) {
-      throw new Error("Empty flag name");
+      throw CliError.usage("usage_error", "Empty flag name");
     }
 
     const next = tokens[i + 1];
@@ -150,22 +187,68 @@ export function commandExitCode(command: string, result: unknown): number {
   if (command === "login" && typeof result === "object" && result !== null) {
     const authResult = result as { success?: unknown; isLoggedIn?: unknown };
     if (authResult.success === false || authResult.isLoggedIn === false) {
-      return 1;
+      return EXIT_CODES.auth;
     }
   }
 
-  return 0;
+  return EXIT_CODES.success;
+}
+
+export function loginFailureAsCliError(result: unknown): CliError | null {
+  if (typeof result !== "object" || result === null) {
+    return null;
+  }
+
+  const authResult = result as {
+    success?: unknown;
+    isLoggedIn?: unknown;
+    message?: unknown;
+    email?: unknown;
+    consumerId?: unknown;
+    cookiesPath?: unknown;
+    storageStatePath?: unknown;
+  };
+
+  if (authResult.success !== false && authResult.isLoggedIn !== false) {
+    return null;
+  }
+
+  return CliError.auth(
+    typeof authResult.message === "string" && authResult.message.length > 0
+      ? authResult.message
+      : "DoorDash authentication was not established.",
+    {
+      auth: {
+        isLoggedIn: authResult.isLoggedIn === true,
+        email: typeof authResult.email === "string" ? authResult.email : null,
+        consumerId: typeof authResult.consumerId === "string" ? authResult.consumerId : null,
+        cookiesPath: typeof authResult.cookiesPath === "string" ? authResult.cookiesPath : null,
+        storageStatePath: typeof authResult.storageStatePath === "string" ? authResult.storageStatePath : null,
+      },
+    },
+  );
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const { command, flags } = parseArgv(argv);
+  const jsonMode = parseJsonFlag(flags.json);
 
   if (flags.version === "true") {
+    if (jsonMode) {
+      console.log(JSON.stringify(buildAutomationSuccessEnvelope({ command: null, version: version(), data: { version: version() } }), null, 2));
+      return;
+    }
+
     console.log(version());
     return;
   }
 
   if (!command || command === "help" || flags.help === "true") {
+    if (jsonMode) {
+      console.log(JSON.stringify(buildAutomationSuccessEnvelope({ command: command ?? null, version: version(), data: { usage: usage() } }), null, 2));
+      return;
+    }
+
     console.log(usage());
     return;
   }
@@ -176,7 +259,22 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 
   try {
     const result = await lib.runCommand(safeCommand, flags);
-    console.log(JSON.stringify(result, null, 2));
+    const loginFailure = loginFailureAsCliError(result);
+    if (loginFailure) {
+      if (jsonMode) {
+        console.error(JSON.stringify(buildAutomationErrorEnvelope({ command: safeCommand, version: version(), error: loginFailure }), null, 2));
+      } else {
+        console.log(JSON.stringify(result, null, 2));
+      }
+      process.exitCode = exitCodeForCliError(loginFailure);
+      return;
+    }
+
+    if (jsonMode) {
+      console.log(JSON.stringify(buildAutomationSuccessEnvelope({ command: safeCommand, version: version(), data: result }), null, 2));
+    } else {
+      console.log(JSON.stringify(result, null, 2));
+    }
     process.exitCode = commandExitCode(safeCommand, result);
   } finally {
     await lib.shutdown();
@@ -184,11 +282,25 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
+  let jsonMode = false;
+  let parsedCommand: string | null = null;
+
   try {
+    const parsed = parseArgv(argv);
+    parsedCommand = parsed.command ?? null;
+    jsonMode = parseJsonFlag(parsed.flags.json);
     await main(argv);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    console.error(`\n${usage()}`);
+    const cliError = toCliError(error, parsedCommand);
+
+    if (jsonMode) {
+      console.error(JSON.stringify(buildAutomationErrorEnvelope({ command: parsedCommand, version: version(), error: cliError }), null, 2));
+    } else {
+      console.error(cliError.message);
+      if (shouldPrintUsage(cliError)) {
+        console.error(`\n${usage()}`);
+      }
+    }
 
     try {
       const { shutdown } = await import("./lib.js");
@@ -197,7 +309,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
       // Help/no-arg flows should work even if runtime deps are unavailable.
     }
 
-    process.exitCode = 1;
+    process.exitCode = exitCodeForCliError(cliError);
   }
 }
 

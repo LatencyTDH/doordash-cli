@@ -10,7 +10,11 @@ npm run cli --
 
 For installation and first-run setup, see [install.md](install.md).
 
-All commands print JSON.
+Commands print structured JSON by default. For stable scripting and machine-readable failures, prefer `--json`.
+
+```bash
+doordash-cli --json auth-check
+```
 
 ## Session setup
 

@@ -1,0 +1,173 @@
+{
+  "restaurantId": "1721744",
+  "cartId": "90a554a1-cc69-462b-8860-911ddf2d7f88",
+  "quantity": 1,
+  "specialInstructions": null,
+  "optionSelections": [
+    {
+      "groupId": "703393388",
+      "optionId": "4716032529"
+    },
+    {
+      "groupId": "703393389",
+      "optionId": "4716042466"
+    },
+    {
+      "groupId": "recommended_option_546935995",
+      "optionId": "546936011",
+      "children": [
+        {
+          "groupId": "780057412",
+          "optionId": "4702669757"
+        }
+      ]
+    }
+  ],
+  "item": {
+    "id": "546936015",
+    "name": "Two roll selection",
+    "description": "Spicy tuna, salmon avo, eel cuc, yellowtail scallion, California Roll.",
+    "displayPrice": "$18.98",
+    "imageUrl": null,
+    "nextCursor": null,
+    "storeId": "1721744"
+  },
+  "itemDetail": {
+    "success": true,
+    "restaurantId": "1721744",
+    "item": {
+      "id": "546936015",
+      "name": "Two roll selection",
+      "description": "Spicy tuna, salmon avo, eel cuc, yellowtail scallion, California Roll.",
+      "displayPrice": "+$18.98",
+      "unitAmount": 1898,
+      "currency": "USD",
+      "decimalPlaces": 2,
+      "menuId": "2181443",
+      "specialInstructionsMaxLength": 500,
+      "dietaryTags": [],
+      "reviewData": null,
+      "requiredOptionLists": [
+        {
+          "id": "703393388",
+          "name": "1st Roll Choice",
+          "subtitle": "Select 1",
+          "minNumOptions": 1,
+          "maxNumOptions": 1,
+          "numFreeOptions": 0,
+          "isOptional": false,
+          "options": [
+            {
+              "id": "4716032529",
+              "name": "California Roll",
+              "displayPrice": "",
+              "unitAmount": 0,
+              "defaultQuantity": 0,
+              "nextCursor": null
+            }
+          ]
+        },
+        {
+          "id": "703393389",
+          "name": "2nd Roll Choice",
+          "subtitle": "Select 1",
+          "minNumOptions": 1,
+          "maxNumOptions": 1,
+          "numFreeOptions": 0,
+          "isOptional": false,
+          "options": [
+            {
+              "id": "4716042466",
+              "name": "California Roll",
+              "displayPrice": "",
+              "unitAmount": 0,
+              "defaultQuantity": 0,
+              "nextCursor": null
+            }
+          ]
+        }
+      ],
+      "optionLists": [
+        {
+          "id": "703393388",
+          "name": "1st Roll Choice",
+          "subtitle": "Select 1",
+          "minNumOptions": 1,
+          "maxNumOptions": 1,
+          "numFreeOptions": 0,
+          "isOptional": false,
+          "options": [
+            {
+              "id": "4716032529",
+              "name": "California Roll",
+              "displayPrice": "",
+              "unitAmount": 0,
+              "defaultQuantity": 0,
+              "nextCursor": null
+            }
+          ]
+        },
+        {
+          "id": "703393389",
+          "name": "2nd Roll Choice",
+          "subtitle": "Select 1",
+          "minNumOptions": 1,
+          "maxNumOptions": 1,
+          "numFreeOptions": 0,
+          "isOptional": false,
+          "options": [
+            {
+              "id": "4716042466",
+              "name": "California Roll",
+              "displayPrice": "",
+              "unitAmount": 0,
+              "defaultQuantity": 0,
+              "nextCursor": null
+            }
+          ]
+        },
+        {
+          "id": "recommended_option_546935995",
+          "name": "Recommended Beverages",
+          "subtitle": null,
+          "minNumOptions": 0,
+          "maxNumOptions": 10,
+          "numFreeOptions": 0,
+          "isOptional": true,
+          "options": [
+            {
+              "id": "546936011",
+              "name": "Sake (salmon)",
+              "displayPrice": "+$5.00",
+              "unitAmount": 500,
+              "defaultQuantity": 0,
+              "nextCursor": "opaque-next-cursor"
+            }
+          ]
+        }
+      ],
+      "preferences": []
+    }
+  },
+  "recommendedNestedOptionLists": [
+    {
+      "id": "780057412",
+      "name": "Choice",
+      "subtitle": "Select 1",
+      "minNumOptions": 1,
+      "maxNumOptions": 1,
+      "numFreeOptions": 0,
+      "isOptional": false,
+      "options": [
+        {
+          "id": "4702669757",
+          "name": "sashimi",
+          "displayPrice": "",
+          "unitAmount": 0,
+          "defaultQuantity": 0,
+          "nextCursor": null
+        }
+      ]
+    }
+  ]
+}

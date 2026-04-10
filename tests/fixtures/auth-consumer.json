@@ -1,0 +1,13 @@
+{
+  "isGuest": false,
+  "email": "fixture-user@example.com",
+  "firstName": "Fixture",
+  "lastName": "User",
+  "id": "consumer-123",
+  "marketId": "market-nyc",
+  "defaultAddress": {
+    "printableAddress": "11 Wall St, New York, NY 10005, USA",
+    "zipCode": "10005",
+    "submarketId": "submarket-1"
+  }
+}

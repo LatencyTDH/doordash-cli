@@ -1,0 +1,19 @@
+{
+  "lat": 40.707757,
+  "lng": -74.010045,
+  "city": "New York",
+  "state": "NY",
+  "zipCode": "10005",
+  "printableAddress": "11 Wall St, New York, NY 10005, USA",
+  "shortname": "11 Wall St",
+  "googlePlaceId": "ChIJ8fw4t0hawokRk1YdVjndM9w",
+  "subpremise": null,
+  "driverInstructions": null,
+  "dropoffOptionId": null,
+  "manualLat": null,
+  "manualLng": null,
+  "addressLinkType": "ADDRESS_LINK_TYPE_UNSPECIFIED",
+  "buildingName": null,
+  "entryCode": null,
+  "personalAddressLabel": null
+}

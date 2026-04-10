@@ -1,0 +1,16 @@
+{
+  "success": true,
+  "isLoggedIn": true,
+  "email": "fixture-user@example.com",
+  "firstName": "Fixture",
+  "lastName": "User",
+  "consumerId": "consumer-123",
+  "marketId": "market-nyc",
+  "defaultAddress": {
+    "printableAddress": "11 Wall St, New York, NY 10005, USA",
+    "zipCode": "10005",
+    "submarketId": "submarket-1"
+  },
+  "cookiesPath": "__SESSION_COOKIES_PATH__",
+  "storageStatePath": "__SESSION_STORAGE_STATE_PATH__"
+}
