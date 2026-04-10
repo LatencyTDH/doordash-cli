@@ -1,4 +1,6 @@
-import { cleanup as browserCleanup } from "@striderlabs/mcp-doordash/dist/browser.js";
+import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
 import {
   addToCartDirect,
   bootstrapAuthSession,
@@ -8,6 +10,8 @@ import {
   getCartDirect,
   getItemDirect,
   getMenuDirect,
+  getOrderDirect,
+  getOrdersDirect,
   parseOptionSelectionsJson,
   searchRestaurantsDirect,
   setAddressDirect,
@@ -18,20 +22,27 @@ import {
   type CartResult,
   type ItemResult,
   type MenuResult,
+  type OrderResult,
+  type OrdersResult,
   type SearchResult,
   type SetAddressResult,
   type UpdateCartResult,
 } from "./direct-api.js";
 
+const require = createRequire(import.meta.url);
+const PLAYWRIGHT_CLI_PATH = join(dirname(require.resolve("playwright/package.json")), "cli.js");
+
 export const SAFE_COMMANDS = [
+  "install-browser",
   "auth-check",
-  "auth-bootstrap",
   "login",
-  "auth-clear",
+  "logout",
   "set-address",
   "search",
   "menu",
   "item",
+  "orders",
+  "order",
   "add-to-cart",
   "update-cart",
   "cart",
@@ -50,21 +61,29 @@ export const BLOCKED_COMMANDS = [
 export type SafeCommand = (typeof SAFE_COMMANDS)[number];
 export type CommandFlags = Record<string, string>;
 
+const LEGACY_COMMAND_RENAMES = {
+  "auth-bootstrap": "login",
+  "auth-clear": "logout",
+} as const;
+
 const COMMAND_FLAGS = {
+  "install-browser": [],
   "auth-check": [],
-  "auth-bootstrap": [],
   login: [],
-  "auth-clear": [],
+  logout: [],
   "set-address": ["address"],
   search: ["query", "cuisine"],
   menu: ["restaurant-id"],
   item: ["restaurant-id", "item-id"],
+  orders: ["limit", "active-only"],
+  order: ["order-id"],
   "add-to-cart": ["restaurant-id", "item-id", "item-name", "quantity", "special-instructions", "options-json"],
   "update-cart": ["cart-item-id", "quantity"],
   cart: [],
 } as const satisfies Record<SafeCommand, readonly string[]>;
 
 export type CommandResult =
+  | { success: true; message: string; browser: "chromium" }
   | AuthResult
   | AuthBootstrapResult
   | { success: true; message: string; cookiesPath: string; storageStatePath: string }
@@ -72,6 +91,8 @@ export type CommandResult =
   | SearchResult
   | MenuResult
   | ItemResult
+  | OrdersResult
+  | OrderResult
   | AddToCartResult
   | UpdateCartResult
   | CartResult;
@@ -90,9 +111,15 @@ export function assertSafeCommand(value: string): asserts value is SafeCommand {
   }
 
   if (isBlockedCommand(value)) {
+    const guidance = value === "track-order" ? " Use `orders` or `order --order-id ...` for read-only existing-order status instead." : "";
     throw new Error(
-      `Blocked command: ${value}. This CLI is cart-safe only and will not expose checkout, order placement, tracking, or payment actions.`,
+      `Blocked command: ${value}. This CLI is read-only for browse, cart, and existing-order inspection only; checkout, order placement, and payment actions stay out of scope.${guidance}`,
     );
+  }
+
+  const renamedTo = LEGACY_COMMAND_RENAMES[value as keyof typeof LEGACY_COMMAND_RENAMES];
+  if (renamedTo) {
+    throw new Error(`Unsupported command: ${value}. This CLI renamed it to ${renamedTo}.`);
   }
 
   throw new Error(`Unsupported command: ${value}. Allowed commands: ${SAFE_COMMANDS.join(", ")}`);
@@ -114,14 +141,16 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
   assertAllowedFlags(command, args);
 
   switch (command) {
+    case "install-browser":
+      return installBrowser();
+
     case "auth-check":
       return checkAuthDirect();
 
-    case "auth-bootstrap":
     case "login":
       return bootstrapAuthSession();
 
-    case "auth-clear":
+    case "logout":
       return clearStoredSession();
 
     case "set-address": {
@@ -144,6 +173,24 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
       const restaurantId = requiredArg(args, "restaurant-id");
       const itemId = requiredArg(args, "item-id");
       return getItemDirect(restaurantId, itemId);
+    }
+
+    case "orders": {
+      const limitRaw = optionalArg(args, "limit");
+      const limit = limitRaw === undefined ? undefined : Number.parseInt(limitRaw, 10);
+      if (limitRaw !== undefined && (!Number.isInteger(limit) || (limit ?? 0) < 1)) {
+        throw new Error(`Invalid --limit: ${limitRaw}`);
+      }
+
+      return getOrdersDirect({
+        limit,
+        activeOnly: parseBooleanFlag(optionalArg(args, "active-only"), "active-only") ?? false,
+      });
+    }
+
+    case "order": {
+      const orderId = requiredArg(args, "order-id");
+      return getOrderDirect(orderId);
     }
 
     case "add-to-cart": {
@@ -195,7 +242,30 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
 
 export async function shutdown(): Promise<void> {
   await cleanupDirect().catch(() => {});
-  await browserCleanup().catch(() => {});
+}
+
+async function installBrowser(): Promise<{ success: true; message: string; browser: "chromium" }> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, [PLAYWRIGHT_CLI_PATH, "install", "chromium"], {
+      stdio: "inherit",
+    });
+
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`Playwright browser install failed (code=${code ?? "null"}, signal=${signal ?? "none"})`));
+    });
+  });
+
+  return {
+    success: true,
+    browser: "chromium",
+    message: "Chromium is installed for doordash-cli.",
+  };
 }
 
 function requiredArg(args: CommandFlags, key: string): string {
@@ -209,4 +279,21 @@ function requiredArg(args: CommandFlags, key: string): string {
 function optionalArg(args: CommandFlags, key: string): string | undefined {
   const value = args[key];
   return value && value.length > 0 ? value : undefined;
+}
+
+function parseBooleanFlag(value: string | undefined, key: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  throw new Error(`Invalid --${key}: ${value}. Expected true or false.`);
 }

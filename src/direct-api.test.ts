@@ -1,15 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  bootstrapAuthSessionWithDeps,
   buildAddConsumerAddressPayload,
   buildAddToCartPayload,
   buildUpdateCartPayload,
+  extractExistingOrdersFromApolloCache,
   normalizeItemName,
+  parseExistingOrderLifecycleStatus,
+  parseExistingOrdersResponse,
   parseOptionSelectionsJson,
   parseSearchRestaurantRow,
   resolveAttachedBrowserCdpCandidates,
   resolveAvailableAddressMatch,
   resolveSystemBrowserOpenCommand,
+  selectAttachedBrowserImportMode,
+  type AuthResult,
   type ItemResult,
 } from "./direct-api.js";
 
@@ -118,43 +124,6 @@ test("normalizeItemName trims and collapses whitespace", () => {
   assert.equal(normalizeItemName("  Sushi   premium "), "sushi premium");
 });
 
-test("resolveAttachedBrowserCdpCandidates prioritizes generic explicit envs and defaults", () => {
-  const env = {
-    DOORDASH_BROWSER_CDP_URLS: "http://127.0.0.1:9555/, http://127.0.0.1:9556",
-    DOORDASH_ATTACHED_BROWSER_CDP_URL: "http://127.0.0.1:9666/",
-    DOORDASH_BROWSER_CDP_PORTS: "9333, 9334",
-    DOORDASH_BROWSER_CDP_PORT: "9444",
-  } as NodeJS.ProcessEnv;
-
-  const candidates = resolveAttachedBrowserCdpCandidates(env, ["http://127.0.0.1:9777"]);
-  assert.deepEqual(candidates.slice(0, 6), [
-    "http://127.0.0.1:9555",
-    "http://127.0.0.1:9556",
-    "http://127.0.0.1:9666",
-    "http://127.0.0.1:9333",
-    "http://127.0.0.1:9334",
-    "http://127.0.0.1:9444",
-  ]);
-  assert.ok(candidates.includes("http://127.0.0.1:9777"));
-  assert.ok(candidates.includes("http://127.0.0.1:18792"));
-  assert.ok(candidates.includes("http://127.0.0.1:9222"));
-});
-
-test("resolveSystemBrowserOpenCommand stays generic across operating systems", () => {
-  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "darwin"), {
-    command: "open",
-    args: ["https://www.doordash.com/home"],
-  });
-  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "linux"), {
-    command: "xdg-open",
-    args: ["https://www.doordash.com/home"],
-  });
-  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "win32"), {
-    command: "cmd",
-    args: ["/c", "start", "", "https://www.doordash.com/home"],
-  });
-});
-
 test("parseSearchRestaurantRow extracts restaurant metadata from facet rows", () => {
   const row = parseSearchRestaurantRow({
     id: "row.store:24633898:0",
@@ -195,6 +164,168 @@ test("parseSearchRestaurantRow extracts restaurant metadata from facet rows", ()
     imageUrl: "https://img.cdn4dd.com/example.jpeg",
     url: "https://www.doordash.com/store/24633898/?pickup=false",
   });
+});
+
+test("resolveAttachedBrowserCdpCandidates prioritizes explicit envs, compatibility envs, config, and defaults", () => {
+  const env = {
+    DOORDASH_BROWSER_CDP_URLS: "http://127.0.0.1:9555/, http://127.0.0.1:9556",
+    DOORDASH_ATTACHED_BROWSER_CDP_URL: "http://127.0.0.1:9666/",
+    DOORDASH_BROWSER_CDP_PORTS: "9333, 9334",
+    DOORDASH_BROWSER_CDP_PORT: "9444",
+    OPENCLAW_BROWSER_CDP_URL: "http://127.0.0.1:18888/",
+  } as NodeJS.ProcessEnv;
+
+  const candidates = resolveAttachedBrowserCdpCandidates(env, ["http://127.0.0.1:9777"]);
+  assert.deepEqual(candidates.slice(0, 7), [
+    "http://127.0.0.1:9555",
+    "http://127.0.0.1:9556",
+    "http://127.0.0.1:9666",
+    "http://127.0.0.1:9333",
+    "http://127.0.0.1:9334",
+    "http://127.0.0.1:9444",
+    "http://127.0.0.1:18888",
+  ]);
+  assert.ok(candidates.includes("http://127.0.0.1:9777"));
+  assert.ok(candidates.includes("http://127.0.0.1:18792"));
+  assert.ok(candidates.includes("http://127.0.0.1:18800"));
+  assert.ok(candidates.includes("http://127.0.0.1:9222"));
+});
+
+test("resolveSystemBrowserOpenCommand stays generic across operating systems", () => {
+  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "darwin"), {
+    command: "open",
+    args: ["https://www.doordash.com/home"],
+  });
+  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "linux"), {
+    command: "xdg-open",
+    args: ["https://www.doordash.com/home"],
+  });
+  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "win32"), {
+    command: "cmd",
+    args: ["/c", "start", "", "https://www.doordash.com/home"],
+  });
+});
+
+test("selectAttachedBrowserImportMode treats an authenticated browser with DoorDash cookies as an immediate import candidate", () => {
+  assert.equal(
+    selectAttachedBrowserImportMode({
+      pageUrls: ["https://github.com/LatencyTDH/doordash-cli/pulls"],
+      cookies: [{ domain: ".doordash.com" }],
+    }),
+    "cookies",
+  );
+  assert.equal(
+    selectAttachedBrowserImportMode({
+      pageUrls: ["https://www.doordash.com/home"],
+      cookies: [{ domain: ".github.com" }],
+    }),
+    "page",
+  );
+  assert.equal(
+    selectAttachedBrowserImportMode({
+      pageUrls: ["https://github.com/LatencyTDH/doordash-cli"],
+      cookies: [{ domain: ".github.com" }],
+    }),
+    "skip",
+  );
+});
+
+test("bootstrapAuthSessionWithDeps returns immediately when an attached browser session is already authenticated", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: true,
+    email: "user@example.com",
+    firstName: "Test",
+    lastName: "User",
+    consumerId: "consumer-1",
+    marketId: "market-1",
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  let openCalls = 0;
+  let waitCalls = 0;
+  let markCalls = 0;
+  const logs: string[] = [];
+  const result = await bootstrapAuthSessionWithDeps({
+    importBrowserSessionIfAvailable: async () => true,
+    markBrowserImportAttempted: () => {
+      markCalls += 1;
+    },
+    getAttachedBrowserCdpCandidates: async () => {
+      throw new Error("should not inspect candidates on immediate login reuse");
+    },
+    getReachableCdpCandidates: async () => {
+      throw new Error("should not probe reachability on immediate login reuse");
+    },
+    openUrlInDefaultBrowser: async () => {
+      openCalls += 1;
+      return true;
+    },
+    waitForAttachedBrowserSessionImport: async () => {
+      waitCalls += 1;
+      return true;
+    },
+    checkAuthDirect: async () => auth,
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.equal(markCalls, 1);
+  assert.equal(openCalls, 0);
+  assert.equal(waitCalls, 0);
+  assert.equal(logs.length, 0);
+  assert.equal(result.isLoggedIn, true);
+  assert.match(result.message, /Reused an existing signed-in browser session/);
+});
+
+test("bootstrapAuthSessionWithDeps only enters the wait path when auth is not already present", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: true,
+    email: "user@example.com",
+    firstName: "Test",
+    lastName: "User",
+    consumerId: "consumer-1",
+    marketId: "market-1",
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  let openCalls = 0;
+  let waitCalls = 0;
+  let reachableCalls = 0;
+  const logs: string[] = [];
+  const result = await bootstrapAuthSessionWithDeps({
+    importBrowserSessionIfAvailable: async () => false,
+    markBrowserImportAttempted: () => {},
+    getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
+    getReachableCdpCandidates: async (candidates) => {
+      reachableCalls += 1;
+      return candidates;
+    },
+    openUrlInDefaultBrowser: async () => {
+      openCalls += 1;
+      return true;
+    },
+    waitForAttachedBrowserSessionImport: async () => {
+      waitCalls += 1;
+      return true;
+    },
+    checkAuthDirect: async () => auth,
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.equal(reachableCalls, 1);
+  assert.equal(openCalls, 1);
+  assert.equal(waitCalls, 1);
+  assert.match(logs.join("\n"), /Opened DoorDash in your default browser/);
+  assert.match(result.message, /detected the signed-in session/);
 });
 
 test("parseOptionSelectionsJson parses structured recursive option selections", () => {
@@ -318,6 +449,165 @@ test("buildAddConsumerAddressPayload maps autocomplete/get-or-create data into a
     entryCode: null,
     personalAddressLabel: null,
   });
+});
+
+test("parseExistingOrderLifecycleStatus derives active, fulfilled, and cancelled states", () => {
+  assert.equal(parseExistingOrderLifecycleStatus({ createdAt: "2026-03-01T12:00:00Z" }), "draft");
+  assert.equal(
+    parseExistingOrderLifecycleStatus({ createdAt: "2026-03-01T12:00:00Z", submittedAt: "2026-03-01T12:01:00Z" }),
+    "submitted",
+  );
+  assert.equal(parseExistingOrderLifecycleStatus({ pollingInterval: 30, submittedAt: "2026-03-01T12:01:00Z" }), "in-progress");
+  assert.equal(parseExistingOrderLifecycleStatus({ fulfilledAt: "2026-03-01T12:45:00Z" }), "fulfilled");
+  assert.equal(parseExistingOrderLifecycleStatus({ cancelledAt: "2026-03-01T12:10:00Z" }), "cancelled");
+});
+
+test("parseExistingOrdersResponse normalizes DoorDash order history payloads", () => {
+  const orders = parseExistingOrdersResponse([
+    {
+      id: "order-row-2",
+      orderUuid: "order-uuid-2",
+      deliveryUuid: "delivery-uuid-2",
+      createdAt: "2026-03-02T12:00:00Z",
+      fulfilledAt: "2026-03-02T12:50:00Z",
+      pollingInterval: null,
+      isReorderable: true,
+      isGift: false,
+      isPickup: false,
+      isRetail: false,
+      isMerchantShipping: false,
+      containsAlcohol: false,
+      fulfillmentType: "DELIVERY",
+      shoppingProtocol: "STANDARD",
+      orderFilterType: "PAST",
+      store: {
+        id: "store-2",
+        name: "Sushi Place",
+        business: { name: "Sushi Place" },
+      },
+      grandTotal: {
+        unitAmount: 2599,
+        currency: "USD",
+        decimalPlaces: 2,
+        displayString: "$25.99",
+        sign: null,
+      },
+      orders: [
+        {
+          id: "sub-order-2",
+          items: [
+            {
+              id: "line-2",
+              name: "Salmon Roll",
+              quantity: 2,
+              specialInstructions: "extra ginger",
+              substitutionPreferences: "substitute",
+              originalItemPrice: 1299,
+              purchaseType: "PURCHASE_TYPE_UNIT",
+              purchaseQuantity: {
+                discreteQuantity: { quantity: 2, unit: "ea" },
+              },
+              fulfillQuantity: {
+                discreteQuantity: { quantity: 2, unit: "ea" },
+              },
+              orderItemExtras: [
+                {
+                  menuItemExtraId: "extra-1",
+                  name: "Sauces",
+                  orderItemExtraOptions: [
+                    {
+                      menuExtraOptionId: "option-1",
+                      name: "Soy Sauce",
+                      description: "low sodium",
+                      price: 0,
+                      quantity: 1,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "order-row-1",
+      orderUuid: "order-uuid-1",
+      deliveryUuid: "delivery-uuid-1",
+      createdAt: "2026-03-03T12:00:00Z",
+      submittedAt: "2026-03-03T12:01:00Z",
+      pollingInterval: 30,
+      isReorderable: false,
+      isGift: false,
+      isPickup: false,
+      isRetail: false,
+      isMerchantShipping: false,
+      containsAlcohol: false,
+      fulfillmentType: "DELIVERY",
+      shoppingProtocol: "STANDARD",
+      orderFilterType: "ACTIVE",
+      store: {
+        id: "store-1",
+        name: "Burger Spot",
+        business: { name: "Burger Spot" },
+      },
+      orders: [{ id: "sub-order-1", items: [{ id: "line-1", name: "Burger", quantity: 1 }] }],
+    },
+  ]);
+
+  assert.equal(orders[0]?.orderUuid, "order-uuid-1");
+  assert.equal(orders[0]?.lifecycleStatus, "in-progress");
+  assert.equal(orders[0]?.isActive, true);
+  assert.equal(orders[1]?.grandTotal?.displayString, "$25.99");
+  assert.equal(orders[1]?.items[0]?.extras[0]?.options[0]?.name, "Soy Sauce");
+});
+
+test("extractExistingOrdersFromApolloCache resolves Apollo refs from the orders page cache", () => {
+  const orders = extractExistingOrdersFromApolloCache({
+    ROOT_QUERY: {
+      'getConsumerOrdersWithDetails({"includeCancelled":true,"limit":10,"offset":0})': [{ __ref: "ConsumerOrder:1" }],
+    },
+    'ConsumerOrder:1': {
+      id: "row-1",
+      orderUuid: "order-uuid-1",
+      deliveryUuid: "delivery-uuid-1",
+      createdAt: "2026-03-04T12:00:00Z",
+      submittedAt: "2026-03-04T12:01:00Z",
+      pollingInterval: 20,
+      isReorderable: false,
+      isGift: false,
+      isPickup: false,
+      isRetail: false,
+      isMerchantShipping: false,
+      containsAlcohol: false,
+      fulfillmentType: "DELIVERY",
+      shoppingProtocol: "STANDARD",
+      orderFilterType: "ACTIVE",
+      store: { __ref: "Store:1" },
+      orders: [{ __ref: "GroupedOrder:1" }],
+      grandTotal: { displayString: "$19.99", unitAmount: 1999, currency: "USD", decimalPlaces: 2, sign: null },
+      likelyOosItems: [],
+    },
+    'Store:1': {
+      id: "store-1",
+      name: "Burger Spot",
+      business: { name: "Burger Spot" },
+    },
+    'GroupedOrder:1': {
+      id: "group-1",
+      items: [{ __ref: "OrderItem:1" }],
+    },
+    'OrderItem:1': {
+      id: "line-1",
+      name: "Burger",
+      quantity: 1,
+    },
+  });
+
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0]?.store?.name, "Burger Spot");
+  assert.equal(orders[0]?.items[0]?.name, "Burger");
+  assert.equal(orders[0]?.hasLiveTracking, true);
 });
 
 test("buildAddToCartPayload blocks required-option items when no selections are provided", async () => {

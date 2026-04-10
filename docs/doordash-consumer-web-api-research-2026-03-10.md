@@ -1,11 +1,21 @@
 # DoorDash consumer web API research
 
 _Date:_ 2026-03-10  
-_Status:_ reverse-engineering report; **not** yet wired into the CLI as the default transport
+_Status:_ historical reverse-engineering report. The repo has **since** shipped the direct GraphQL/HTTP transport as the default path for the cart-safe CLI surface; treat the implementation status below as a time-stamped research snapshot unless a later note overrides it.
+
+## Status update for the current repo
+
+Since this report was written, the CLI now uses the direct consumer-web transport by default for `auth-check`, `set-address`, `search`, `menu`, `item`, `orders`, `order`, `cart`, `add-to-cart`, and `update-cart`.
+
+Current known limits still match the safety posture from this research for the current cart-safe CLI surface, with one later exception: the repo now allows read-only existing-order inspection via `orders` / `order`. Live tracking remains out of scope.
+
+- `set-address` still fails closed when DoorDash does not expose a saved `defaultAddressId`
+- nested cursor-driven option trees are still rejected instead of guessed
+- checkout, payment, order placement, and payment flows remain intentionally out of scope
 
 ## Executive summary
 
-A direct consumer-web API path looks **viable** for the cart-safe workflow, and materially better than DOM-driven Playwright for most of the CLI surface.
+At the time of this research, a direct consumer-web API path looked **viable** for the cart-safe workflow, and materially better than DOM-driven Playwright for most of the CLI surface.
 
 DoorDash’s consumer web app is not scraping hidden HTML; it is making first-party JSON requests against a mix of:
 
@@ -436,7 +446,7 @@ Per safety constraints, I did **not**:
 - checkout
 - place an order
 - open payment flows intentionally
-- track an order
+- track an order (this historical note predates the later read-only `orders` / `order` support landed in the CLI)
 - use browser-driven ordering as the main solution
 
 The only live interactions were cart-safe:
@@ -509,7 +519,7 @@ If we need to validate this against a **real logged-in personal DoorDash session
 
 1. Open a normal Chrome tab at `https://www.doordash.com/` and sign in.
 2. Open a store page or your cart page.
-3. Click the OpenClaw Browser Relay extension button on that tab so the badge shows **ON**.
+3. Click the browser relay extension button on that tab so the badge shows **ON**.
 4. Do **one** cart-safe action only: refresh the tab, or open the cart panel.
 
 That is enough to capture the logged-in `consumer` / `listCarts` / cart headers and verify whether the same direct API path works for a personal account, without touching checkout or payment.

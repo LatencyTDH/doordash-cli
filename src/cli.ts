@@ -1,39 +1,90 @@
 #!/usr/bin/env node
+import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SAFE_COMMANDS, assertSafeCommand, runCommand, shutdown } from "./lib.js";
+
+const UNICODE_DASH_PREFIX = /^[\u2012\u2013\u2014\u2015\u2212]+/u;
+const FLAG_BODY = /^[A-Za-z0-9][A-Za-z0-9-]*(=.*)?$/;
+
+const PACKAGE_JSON_PATH = new URL("../package.json", import.meta.url);
+const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf8")).version as string;
+
+export function version(): string {
+  return PACKAGE_VERSION;
+}
 
 export function usage(): string {
   return [
-    "doordash-cli <command> [flags]",
+    `doordash-cli v${version()}`,
+    "",
+    "Usage:",
+    "  dd-cli <command> [flags]",
+    "  doordash-cli <command> [flags]",
+    "",
+    "Meta:",
+    "  --help, -h",
+    "  --version, -v",
     "",
     "Safe commands:",
+    "  install-browser",
     "  auth-check",
-    "  auth-bootstrap",
     "  login",
-    "  auth-clear",
+    "  logout",
     '  set-address --address "350 5th Ave, New York, NY 10118"',
     "  search --query sushi [--cuisine japanese]",
     "  menu --restaurant-id 123456",
     "  item --restaurant-id 123456 --item-id 7890",
-    '  add-to-cart --restaurant-id 123456 (--item-id 7890 | --item-name "Spicy Tuna Roll") [--quantity 2] [--special-instructions "no wasabi"] [--options-json "[{\"groupId\":\"703393388\",\"optionId\":\"4716032529\"}]"]',
+    "  orders [--limit 20] [--active-only]",
+    "  order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678",
+    "  add-to-cart --restaurant-id 123456 (--item-id 7890 | --item-name \"Spicy Tuna Roll\") [--quantity 2] [--special-instructions \"no wasabi\"] [--options-json '[{\"groupId\":\"703393388\",\"optionId\":\"4716032529\"}]']",
     "  update-cart --cart-item-id abc123 --quantity 2",
     "  cart",
     "",
     "Notes:",
-    "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, cart, add-to-cart, and update-cart.",
-    "  - auth-check/auth-bootstrap reuse only your existing/main browser session via generic CDP config.",
-    "  - auth-bootstrap opens DoorDash in your default browser and waits for that attached browser session to become reusable; there is no separate managed-browser fallback.",
+    "  - Run with no arguments to show this help.",
+    "  - Common Unicode long dashes are normalized for flags, so —help / –help work too.",
+    "  - Installed command names are lowercase only: dd-cli and doordash-cli.",
+    "  - install-browser downloads the bundled Playwright Chromium runtime used by this package.",
+    "  - Manual pages ship with the project: man dd-cli or man doordash-cli.",
+    "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, orders, order, cart, add-to-cart, and update-cart.",
+    "  - login imports an already-signed-in browser session immediately when possible; otherwise it opens DoorDash in your default browser and waits only as long as needed.",
+    "  - auth-check can quietly reuse/import an already-signed-in browser session when one is available.",
     "  - set-address now uses DoorDash autocomplete/get-or-create plus addConsumerAddressV2 for brand-new address enrollment when needed.",
     "  - configurable items require explicit --options-json selections.",
     '  - standalone recommended add-ons that open a nested cursor step are supported via children, e.g. [{"groupId":"recommended_option_546935995","optionId":"546936011","children":[{"groupId":"780057412","optionId":"4702669757"}]}].',
     "  - other non-recommended nested cursor trees still fail closed until DoorDash exposes a directly provable transport.",
     "",
-    "Dangerous commands are intentionally unsupported:",
-    "  checkout, place-order, track-order, payment actions",
+    "Out-of-scope commands remain intentionally unsupported:",
+    "  checkout, place-order, payment actions, order mutation/cancellation",
     "",
-    `Allowed commands: ${SAFE_COMMANDS.join(", ")}`,
+    "Examples:",
+    "  dd-cli --help",
+    "  dd-cli install-browser",
+    "  dd-cli search --query sushi",
+    "  dd-cli orders --active-only",
+    "  doordash-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678",
+    "  doordash-cli login",
+    "",
+    "Allowed commands: install-browser, auth-check, login, logout, set-address, search, menu, item, orders, order, add-to-cart, update-cart, cart",
   ].join("\n");
+}
+
+export function normalizeOptionToken(token: string): string {
+  const prefix = token.match(UNICODE_DASH_PREFIX)?.[0];
+  if (!prefix) {
+    return token;
+  }
+
+  const body = token.slice(prefix.length);
+  if (!FLAG_BODY.test(body)) {
+    return token;
+  }
+
+  return `${body.length === 1 ? "-" : "--"}${body}`;
+}
+
+function looksLikeFlagToken(token: string): boolean {
+  return token.startsWith("-") || normalizeOptionToken(token) !== token;
 }
 
 export function parseArgv(argv: string[]): { command?: string; flags: Record<string, string> } {
@@ -41,23 +92,30 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
   const flags: Record<string, string> = {};
 
   let command: string | undefined;
-  if (tokens[0] !== undefined && !tokens[0].startsWith("-")) {
+  if (tokens[0] !== undefined && !looksLikeFlagToken(tokens[0])) {
     command = tokens.shift();
   }
 
   for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i];
-    if (token === undefined) {
+    const rawToken = tokens[i];
+    if (rawToken === undefined) {
       throw new Error("Unexpected empty argument");
     }
+
+    const token = normalizeOptionToken(rawToken);
 
     if (token === "-h" || token === "--help") {
       flags.help = "true";
       continue;
     }
 
+    if (token === "-v" || token === "--version") {
+      flags.version = "true";
+      continue;
+    }
+
     if (!token.startsWith("--")) {
-      throw new Error(`Unexpected positional argument: ${token}`);
+      throw new Error(`Unexpected positional argument: ${rawToken}`);
     }
 
     const inlineEquals = token.indexOf("=");
@@ -76,7 +134,7 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
     }
 
     const next = tokens[i + 1];
-    if (next === undefined || next.startsWith("--")) {
+    if (next === undefined || looksLikeFlagToken(next)) {
       flags[key] = "true";
       continue;
     }
@@ -88,39 +146,64 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
   return { command, flags };
 }
 
-async function main(): Promise<void> {
-  const { command, flags } = parseArgv(process.argv.slice(2));
+export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const { command, flags } = parseArgv(argv);
+
+  if (flags.version === "true") {
+    console.log(version());
+    return;
+  }
 
   if (!command || command === "help" || flags.help === "true") {
     console.log(usage());
     return;
   }
 
-  assertSafeCommand(command);
+  const lib: typeof import("./lib.js") = await import("./lib.js");
+  lib.assertSafeCommand(command);
+  const safeCommand: import("./lib.js").SafeCommand = command;
 
   try {
-    const result = await runCommand(command, flags);
+    const result = await lib.runCommand(safeCommand, flags);
     console.log(JSON.stringify(result, null, 2));
     process.exitCode = 0;
   } finally {
-    await shutdown();
+    await lib.shutdown();
   }
 }
 
-function isDirectExecution(): boolean {
-  const invokedPath = process.argv[1];
-  if (!invokedPath) {
+export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
+  try {
+    await main(argv);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    console.error(`\n${usage()}`);
+
+    try {
+      const { shutdown } = await import("./lib.js");
+      await shutdown().catch(() => {});
+    } catch {
+      // Help/no-arg flows should work even if runtime deps are unavailable.
+    }
+
+    process.exitCode = 1;
+  }
+}
+
+export function isDirectExecution(argv1: string | undefined = process.argv[1], metaUrl: string = import.meta.url): boolean {
+  if (!argv1) {
     return false;
   }
 
-  return resolve(invokedPath) === resolve(fileURLToPath(import.meta.url));
+  const modulePath = fileURLToPath(metaUrl);
+
+  try {
+    return realpathSync(resolve(argv1)) === realpathSync(modulePath);
+  } catch {
+    return resolve(argv1) === resolve(modulePath);
+  }
 }
 
 if (isDirectExecution()) {
-  void main().catch(async (error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    console.error(`\n${usage()}`);
-    await shutdown().catch(() => {});
-    process.exitCode = 1;
-  });
+  void runCli();
 }

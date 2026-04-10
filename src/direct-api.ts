@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { chromium, type Browser, type BrowserContext, type Cookie, type Page } from "playwright";
-import { getCookiesPath } from "@striderlabs/mcp-doordash/dist/auth.js";
+import { getCookiesPath, getStorageStatePath } from "./session-storage.js";
 
 const BASE_URL = "https://www.doordash.com";
 const AUTH_BOOTSTRAP_URL = `${BASE_URL}/home`;
@@ -463,6 +463,138 @@ const CURRENT_CART_QUERY = `query consumerOrderCart {
   }
 }`;
 
+
+const EXISTING_ORDERS_QUERY = `query getConsumerOrdersWithDetails($offset: Int!, $limit: Int!, $includeCancelled: Boolean) {
+  getConsumerOrdersWithDetails(offset: $offset, limit: $limit, includeCancelled: $includeCancelled) {
+    id
+    orderUuid
+    deliveryUuid
+    createdAt
+    submittedAt
+    cancelledAt
+    fulfilledAt
+    specialInstructions
+    isReorderable
+    isGift
+    isPickup
+    isRetail
+    isMerchantShipping
+    containsAlcohol
+    fulfillmentType
+    shoppingProtocol
+    orderFilterType
+    pollingInterval
+    creator {
+      id
+      firstName
+      lastName
+    }
+    deliveryAddress {
+      id
+      formattedAddress
+    }
+    orders {
+      id
+      items {
+        id
+        name
+        quantity
+        specialInstructions
+        substitutionPreferences
+        originalItemPrice
+        purchaseType
+        purchaseQuantity {
+          continuousQuantity {
+            quantity
+            unit
+          }
+          discreteQuantity {
+            quantity
+            unit
+          }
+        }
+        fulfillQuantity {
+          continuousQuantity {
+            quantity
+            unit
+          }
+          discreteQuantity {
+            quantity
+            unit
+          }
+        }
+        orderItemExtras {
+          menuItemExtraId
+          name
+          orderItemExtraOptions {
+            menuExtraOptionId
+            name
+            description
+            price
+            quantity
+            orderItemExtras {
+              menuItemExtraId
+              name
+              orderItemExtraOptions {
+                menuExtraOptionId
+                name
+                description
+                price
+                quantity
+              }
+            }
+          }
+        }
+      }
+    }
+    grandTotal {
+      unitAmount
+      currency
+      decimalPlaces
+      displayString
+      sign
+    }
+    likelyOosItems {
+      menuItemId
+      name
+      photoUrl
+    }
+    store {
+      id
+      name
+      business {
+        id
+        name
+      }
+      phoneNumber
+      fulfillsOwnDeliveries
+      customerArrivedPickupInstructions
+      rerouteStoreId
+    }
+    recurringOrderDetails {
+      itemNames
+      consumerId
+      recurringOrderUpcomingOrderUuid
+      scheduledDeliveryDate
+      arrivalTimeDisplayString
+      storeName
+      isCancelled
+    }
+    bundleOrderInfo {
+      primaryBundleOrderUuid
+      primaryBundleOrderId
+      bundleOrderUuids
+      bundleOrderConfig {
+        bundleType
+        bundleOrderRole
+      }
+    }
+    cancellationPendingRefundInfo {
+      state
+    }
+  }
+}`;
+
 const ADD_TO_CART_MUTATION = `mutation addCartItem(
   $addCartItemInput: AddCartItemInput!
   $fulfillmentContext: FulfillmentContextInput!
@@ -749,6 +881,134 @@ export type UpdateCartResult = CartResult & {
   updatedCartItemId: string;
 };
 
+
+export type ExistingOrderLifecycleStatus = "draft" | "submitted" | "in-progress" | "fulfilled" | "cancelled" | "unknown";
+
+export type ExistingOrderMoneyResult = {
+  unitAmount: number | null;
+  currency: string | null;
+  decimalPlaces: number | null;
+  displayString: string | null;
+  sign: string | null;
+};
+
+export type ExistingOrderQuantityResult = {
+  quantity: number | null;
+  unit: string | null;
+};
+
+export type ExistingOrderExtraOptionResult = {
+  menuExtraOptionId: string | null;
+  name: string | null;
+  description: string | null;
+  price: number | null;
+  quantity: number | null;
+  extras: ExistingOrderExtraResult[];
+};
+
+export type ExistingOrderExtraResult = {
+  menuItemExtraId: string | null;
+  name: string | null;
+  options: ExistingOrderExtraOptionResult[];
+};
+
+export type ExistingOrderItemResult = {
+  id: string | null;
+  name: string | null;
+  quantity: number;
+  specialInstructions: string | null;
+  substitutionPreferences: string | null;
+  originalItemPrice: number | null;
+  purchaseType: string | null;
+  purchaseQuantity: ExistingOrderQuantityResult | null;
+  fulfillQuantity: ExistingOrderQuantityResult | null;
+  extras: ExistingOrderExtraResult[];
+};
+
+export type ExistingOrderResult = {
+  id: string | null;
+  orderUuid: string | null;
+  deliveryUuid: string | null;
+  createdAt: string | null;
+  submittedAt: string | null;
+  cancelledAt: string | null;
+  fulfilledAt: string | null;
+  lifecycleStatus: ExistingOrderLifecycleStatus;
+  isActive: boolean;
+  hasLiveTracking: boolean;
+  pollingIntervalSeconds: number | null;
+  specialInstructions: string | null;
+  isReorderable: boolean;
+  isGift: boolean;
+  isPickup: boolean;
+  isRetail: boolean;
+  isMerchantShipping: boolean;
+  containsAlcohol: boolean;
+  fulfillmentType: string | null;
+  shoppingProtocol: string | null;
+  orderFilterType: string | null;
+  creator: {
+    id: string | null;
+    firstName: string | null;
+    lastName: string | null;
+  } | null;
+  deliveryAddress: {
+    id: string | null;
+    formattedAddress: string | null;
+  } | null;
+  store: {
+    id: string | null;
+    name: string | null;
+    businessName: string | null;
+    phoneNumber: string | null;
+    fulfillsOwnDeliveries: boolean | null;
+    customerArrivedPickupInstructions: string | null;
+    rerouteStoreId: string | null;
+  } | null;
+  grandTotal: ExistingOrderMoneyResult | null;
+  itemCount: number;
+  items: ExistingOrderItemResult[];
+  likelyOutOfStockItems: Array<{
+    menuItemId: string | null;
+    name: string | null;
+    photoUrl: string | null;
+  }>;
+  recurringOrderDetails: {
+    itemNames: string[];
+    consumerId: string | null;
+    recurringOrderUpcomingOrderUuid: string | null;
+    scheduledDeliveryDate: string | null;
+    arrivalTimeDisplayString: string | null;
+    storeName: string | null;
+    isCancelled: boolean | null;
+  } | null;
+  bundleOrderInfo: {
+    primaryBundleOrderUuid: string | null;
+    primaryBundleOrderId: string | null;
+    bundleOrderUuids: string[];
+    bundleType: string | null;
+    bundleOrderRole: string | null;
+  } | null;
+  cancellationPendingRefundState: string | null;
+};
+
+export type OrdersResult = {
+  success: true;
+  source: "graphql" | "orders-page-cache";
+  warning: string | null;
+  count: number;
+  activeCount: number;
+  orders: ExistingOrderResult[];
+};
+
+export type OrderResult = {
+  success: true;
+  source: "graphql" | "orders-page-cache";
+  warning: string | null;
+  matchedField: "id" | "orderUuid" | "deliveryUuid";
+  order: ExistingOrderResult;
+};
+
 export type RequestedOptionSelection = {
   groupId: string;
   optionId: string;
@@ -1003,6 +1263,14 @@ type DirectBrowserOptions = {
   persistState?: boolean;
 };
 
+
+type OrdersPageSnapshot = {
+  cache: Record<string, unknown> | null;
+  noOrdersBanner: boolean;
+  turnstileOverlayVisible: boolean;
+  url: string;
+};
+
 class DoorDashDirectSession {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
@@ -1070,6 +1338,29 @@ class DoorDashDirectSession {
     return parsed;
   }
 
+  async ordersPageSnapshot(): Promise<OrdersPageSnapshot> {
+    const page = await this.init();
+    await page.goto(`${BASE_URL}/orders/`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+    await page.waitForTimeout(3_000);
+
+    return page.evaluate(() => {
+      const globalWindow = window as Window & {
+        __APOLLO_CLIENT__?: {
+          cache?: {
+            extract?: () => Record<string, unknown>;
+          };
+        };
+      };
+      const bodyText = document.body?.innerText ?? "";
+      return {
+        cache: globalWindow.__APOLLO_CLIENT__?.cache?.extract?.() ?? null,
+        noOrdersBanner: /No orders yet/i.test(bodyText),
+        turnstileOverlayVisible: Boolean(document.querySelector('[data-testid="turnstile/overlay"]')),
+        url: window.location.href,
+      } satisfies OrdersPageSnapshot;
+    });
+  }
+
   async saveState(): Promise<void> {
     if (!this.context) {
       return;
@@ -1133,6 +1424,10 @@ class DoorDashDirectSession {
     this.attemptedBrowserImport = true;
   }
 
+  resetBrowserImportAttempted(): void {
+    this.attemptedBrowserImport = false;
+  }
+
   private async maybeImportBrowserSession(): Promise<void> {
     if (this.attemptedBrowserImport) {
       return;
@@ -1142,6 +1437,17 @@ class DoorDashDirectSession {
     await importBrowserSessionIfAvailable().catch(() => {});
   }
 }
+
+type BootstrapAuthSessionDeps = {
+  importBrowserSessionIfAvailable: () => Promise<boolean>;
+  markBrowserImportAttempted: () => void;
+  getAttachedBrowserCdpCandidates: () => Promise<string[]>;
+  getReachableCdpCandidates: (candidates: string[]) => Promise<string[]>;
+  openUrlInDefaultBrowser: (targetUrl: string) => Promise<boolean>;
+  waitForAttachedBrowserSessionImport: (input: { timeoutMs: number; pollIntervalMs: number }) => Promise<boolean>;
+  checkAuthDirect: () => Promise<AuthResult>;
+  log: (message: string) => void;
+};
 
 const session = new DoorDashDirectSession();
 
@@ -1169,11 +1475,11 @@ export async function checkAuthDirect(): Promise<AuthResult> {
   };
 }
 
-export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
-  const imported = await importBrowserSessionIfAvailable().catch(() => false);
-  session.markBrowserImportAttempted();
+export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDeps): Promise<AuthBootstrapResult> {
+  const imported = await deps.importBrowserSessionIfAvailable().catch(() => false);
+  deps.markBrowserImportAttempted();
   if (imported) {
-    const auth = await checkAuthDirect();
+    const auth = await deps.checkAuthDirect();
     return {
       ...auth,
       message: auth.isLoggedIn
@@ -1182,29 +1488,28 @@ export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
     };
   }
 
-  const attachedCandidates = await getAttachedBrowserCdpCandidates();
-  const reachableCandidates = await getReachableCdpCandidates(attachedCandidates);
-  const openedBrowser = await openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
+  const attachedCandidates = await deps.getAttachedBrowserCdpCandidates();
+  const reachableCandidates = await deps.getReachableCdpCandidates(attachedCandidates);
+  const openedBrowser = await deps.openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
 
-  if (openedBrowser) {
-    console.error(`Opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`);
-  } else {
-    console.error(`Open this URL in your default browser to continue: ${AUTH_BOOTSTRAP_URL}`);
-  }
-
-  console.error("Complete the sign-in in your normal browser window. I will keep watching for that attached session and import it automatically.");
+  deps.log(
+    openedBrowser
+      ? `Opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`
+      : `Open this URL in your default browser to continue: ${AUTH_BOOTSTRAP_URL}`,
+  );
+  deps.log("Complete the sign-in in your normal browser window. I will keep watching for that session and import it automatically.");
   if (reachableCandidates.length > 0) {
-    console.error(`Detected ${reachableCandidates.length} attachable browser endpoint(s). Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
+    deps.log(`Detected ${reachableCandidates.length} reusable browser connection(s). Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
   } else {
-    console.error(`Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
+    deps.log(`Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
   }
 
-  const importedAfterWait = await waitForAttachedBrowserSessionImport({
+  const importedAfterWait = await deps.waitForAttachedBrowserSessionImport({
     timeoutMs: AUTH_BOOTSTRAP_TIMEOUT_MS,
     pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
   });
 
-  const auth = await checkAuthDirect();
+  const auth = await deps.checkAuthDirect();
   if (importedAfterWait) {
     return {
       ...auth,
@@ -1218,13 +1523,27 @@ export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
     ...auth,
     message:
       reachableCandidates.length > 0
-        ? `Opened DoorDash in your default browser and waited ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in browser session was imported. Finish the login in your main browser and rerun dd-cli auth-bootstrap.`
-        : "Opened DoorDash in your default browser, but could not attach to a Chromium session. Start your main browser with remote debugging enabled (for example --remote-debugging-port=9222), then rerun dd-cli auth-bootstrap.",
+        ? `Opened DoorDash in your default browser and waited ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in browser session was imported. Finish the login in that browser and rerun dd-cli login.`
+        : "Opened DoorDash in your default browser, but could not discover a reusable browser session automatically. If DoorDash is already open and signed in, see the browser-session troubleshooting notes in the README, then rerun dd-cli login.",
   };
+}
+
+export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
+  return bootstrapAuthSessionWithDeps({
+    importBrowserSessionIfAvailable,
+    markBrowserImportAttempted: () => session.markBrowserImportAttempted(),
+    getAttachedBrowserCdpCandidates,
+    getReachableCdpCandidates,
+    openUrlInDefaultBrowser,
+    waitForAttachedBrowserSessionImport,
+    checkAuthDirect,
+    log: (message) => console.error(message),
+  });
 }
 
 export async function clearStoredSession(): Promise<{ success: true; message: string; cookiesPath: string; storageStatePath: string }> {
   await session.close();
+  session.resetBrowserImportAttempted();
   await rm(getCookiesPath(), { force: true }).catch(() => {});
   await rm(getStorageStatePath(), { force: true }).catch(() => {});
   return {
@@ -1337,6 +1656,70 @@ export async function getCartDirect(): Promise<CartResult> {
   return parseCartResponse(data.consumerOrderCart ?? null);
 }
 
+export async function getOrdersDirect(params: { limit?: number; activeOnly?: boolean } = {}): Promise<OrdersResult> {
+  const requestedLimit = params.limit;
+  const activeOnly = params.activeOnly ?? false;
+
+  try {
+    const orders = await fetchExistingOrdersGraphql({ limit: requestedLimit });
+    return buildOrdersResult({
+      source: "graphql",
+      warning: null,
+      orders,
+      activeOnly,
+      requestedLimit,
+    });
+  } catch (error) {
+    if (!isOrderHistoryChallengeError(error)) {
+      throw error;
+    }
+
+    const snapshot = await session.ordersPageSnapshot();
+    const orders = extractExistingOrdersFromApolloCache(snapshot.cache);
+    const warningParts = [
+      "DoorDash challenged the direct order-history GraphQL request, so this response was recovered from the consumer-web orders page cache.",
+      "This fallback is read-only and can be temporarily empty or limited to the first cached page.",
+    ];
+
+    if (snapshot.turnstileOverlayVisible) {
+      warningParts.push("The orders page was still showing DoorDash's security check banner while this snapshot was captured.");
+    }
+
+    if (snapshot.noOrdersBanner) {
+      warningParts.push("The live orders page rendered its 'No orders yet' state for this session.");
+    }
+
+    return buildOrdersResult({
+      source: "orders-page-cache",
+      warning: warningParts.join(" "),
+      orders,
+      activeOnly,
+      requestedLimit,
+    });
+  }
+}
+
+export async function getOrderDirect(orderId: string): Promise<OrderResult> {
+  const requestedOrderId = orderId.trim();
+  if (!requestedOrderId) {
+    throw new Error("Missing required order identifier.");
+  }
+
+  const orders = await getOrdersDirect();
+  const match = findExistingOrderByIdentifier(orders.orders, requestedOrderId);
+  if (!match) {
+    throw new Error(`Could not find order ${requestedOrderId} in the available existing-order history.`);
+  }
+
+  return {
+    success: true,
+    source: orders.source,
+    warning: orders.warning,
+    matchedField: match.matchedField,
+    order: match.order,
+  };
+}
+
 export async function addToCartDirect(params: {
   restaurantId: string;
   itemName?: string;
@@ -1347,11 +1730,13 @@ export async function addToCartDirect(params: {
 }): Promise<AddToCartResult> {
   const { item, itemDetail } = await resolveMenuItem(params.restaurantId, params.itemId, params.itemName);
   const currentCart = await getCartDirect();
+  const currentCartStoreId = currentCart.restaurant?.id ?? null;
+  const cartId = currentCartStoreId && currentCartStoreId !== params.restaurantId ? "" : (currentCart.cartId ?? "");
   const auth = await checkAuthDirect();
 
   const payload = await buildAddToCartPayload({
     restaurantId: params.restaurantId,
-    cartId: currentCart.cartId ?? "",
+    cartId,
     quantity: params.quantity,
     specialInstructions: params.specialInstructions ?? null,
     optionSelections: params.optionSelections ?? [],
@@ -2043,6 +2428,37 @@ function normalizeAddressText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+function isDoorDashUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.hostname === "doordash.com" || url.hostname.endsWith(".doordash.com");
+  } catch {
+    return false;
+  }
+}
+
+function hasDoorDashCookies(cookies: ReadonlyArray<Pick<Cookie, "domain">>): boolean {
+  return cookies.some((cookie) => {
+    const domain = cookie.domain.trim().replace(/^\./, "").toLowerCase();
+    return domain === "doordash.com" || domain.endsWith(".doordash.com");
+  });
+}
+
+export function selectAttachedBrowserImportMode(input: {
+  pageUrls: readonly string[];
+  cookies: ReadonlyArray<Pick<Cookie, "domain">>;
+}): "page" | "cookies" | "skip" {
+  if (input.pageUrls.some((url) => isDoorDashUrl(url))) {
+    return "page";
+  }
+
+  if (hasDoorDashCookies(input.cookies)) {
+    return "cookies";
+  }
+
+  return "skip";
+}
+
 async function importBrowserSessionIfAvailable(): Promise<boolean> {
   return await importBrowserSessionFromCdpCandidates(await getAttachedBrowserCdpCandidates());
 }
@@ -2062,7 +2478,24 @@ async function importBrowserSessionFromCdpCandidates(candidates: string[]): Prom
         continue;
       }
 
-      let page = context.pages().find((candidate) => candidate.url().includes("doordash.com")) ?? null;
+      const cookies = await context.cookies();
+      const pages = context.pages();
+      const importMode = selectAttachedBrowserImportMode({
+        pageUrls: pages.map((candidate) => candidate.url()),
+        cookies,
+      });
+      if (importMode === "skip") {
+        continue;
+      }
+
+      if (importMode === "cookies") {
+        await saveContextState(context, cookies);
+        if (await validatePersistedDirectSessionArtifacts()) {
+          return true;
+        }
+      }
+
+      let page = pages.find((candidate) => isDoorDashUrl(candidate.url())) ?? null;
       if (!page) {
         tempPage = await context.newPage();
         page = tempPage;
@@ -2070,13 +2503,13 @@ async function importBrowserSessionFromCdpCandidates(candidates: string[]): Prom
         await page.waitForTimeout(1_000);
       }
 
-      const consumerData = await fetchConsumerViaPage(page);
-      const consumer = consumerData.consumer ?? null;
+      const consumerData = await fetchConsumerViaPage(page).catch(() => null);
+      const consumer = consumerData?.consumer ?? null;
       if (!consumer || consumer.isGuest !== false) {
         continue;
       }
 
-      await saveContextState(context);
+      await saveContextState(context, cookies);
       return true;
     } catch {
       continue;
@@ -2109,13 +2542,56 @@ async function fetchConsumerViaPage(page: Page): Promise<{ consumer: ConsumerGra
   return parseGraphQlResponse<{ consumer: ConsumerGraph | null }>("attachedBrowserConsumerImport", raw.status, raw.text);
 }
 
-async function saveContextState(context: BrowserContext): Promise<void> {
+async function saveContextState(context: BrowserContext, cookies: Cookie[] | null = null): Promise<void> {
   const storageStatePath = getStorageStatePath();
   await ensureConfigDir();
   await context.storageState({ path: storageStatePath });
 
-  const cookies = await context.cookies();
-  await writeFile(getCookiesPath(), JSON.stringify(cookies, null, 2));
+  const resolvedCookies = cookies ?? (await context.cookies());
+  await writeFile(getCookiesPath(), JSON.stringify(resolvedCookies, null, 2));
+}
+
+async function validatePersistedDirectSessionArtifacts(): Promise<boolean> {
+  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
+  let page: Page | null = null;
+
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"],
+    });
+
+    const storageStatePath = getStorageStatePath();
+    const hasStorage = await hasStorageState();
+    context = await browser.newContext({
+      userAgent: DEFAULT_USER_AGENT,
+      locale: "en-US",
+      viewport: { width: 1280, height: 900 },
+      ...(hasStorage ? { storageState: storageStatePath } : {}),
+    });
+
+    if (!hasStorage) {
+      const cookies = await readStoredCookies();
+      if (cookies.length === 0) {
+        return false;
+      }
+      await context.addCookies(cookies);
+    }
+
+    page = await context.newPage();
+    await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+    await page.waitForTimeout(1_000);
+
+    const consumerData = await fetchConsumerViaPage(page).catch(() => null);
+    return consumerData?.consumer?.isGuest === false;
+  } catch {
+    return false;
+  } finally {
+    await page?.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
+  }
 }
 
 export function resolveAttachedBrowserCdpCandidates(
@@ -2139,17 +2615,22 @@ export function resolveAttachedBrowserCdpCandidates(
     candidates.add(portCandidate);
   }
 
+  for (const compatibilityValue of [env.DOORDASH_MANAGED_BROWSER_CDP_URL, env.OPENCLAW_BROWSER_CDP_URL, env.OPENCLAW_OPENCLAW_CDP_URL]) {
+    addCandidate(compatibilityValue);
+  }
+
   for (const value of configCandidates) {
     addCandidate(value);
   }
 
   addCandidate("http://127.0.0.1:18792");
+  addCandidate("http://127.0.0.1:18800");
   addCandidate("http://127.0.0.1:9222");
   return [...candidates];
 }
 
 async function getAttachedBrowserCdpCandidates(): Promise<string[]> {
-  const configCandidates = await readOpenClawBrowserProfileCandidates(["user", "chrome"]);
+  const configCandidates = await readOpenClawBrowserConfigCandidates({ profileNames: ["user", "chrome", "openclaw"] });
   return resolveAttachedBrowserCdpCandidates(process.env, configCandidates);
 }
 
@@ -2277,7 +2758,7 @@ function wait(ms: number): Promise<void> {
   });
 }
 
-async function readOpenClawBrowserProfileCandidates(profileNames: string[]): Promise<string[]> {
+async function readOpenClawBrowserConfigCandidates(input: { profileNames: string[] }): Promise<string[]> {
   try {
     const raw = await readFile(join(homedir(), ".openclaw", "openclaw.json"), "utf8");
     const parsed = safeJsonParse<Record<string, unknown>>(raw);
@@ -2285,7 +2766,10 @@ async function readOpenClawBrowserProfileCandidates(profileNames: string[]): Pro
     const profiles = asObject(browserConfig.profiles);
     const candidates: string[] = [];
 
-    for (const profileName of profileNames) {
+    appendBrowserConfigCandidate(candidates, browserConfig);
+    appendBrowserConfigCandidate(candidates, browserConfig.openclaw);
+
+    for (const profileName of input.profileNames) {
       appendBrowserConfigCandidate(candidates, profiles[profileName]);
     }
 
@@ -2512,6 +2996,271 @@ function parseCartResponse(cartRoot: unknown | null): CartResult {
   };
 }
 
+
+export function parseExistingOrderLifecycleStatus(orderRoot: unknown): ExistingOrderLifecycleStatus {
+  const order = asObject(orderRoot);
+
+  if (typeof order.cancelledAt === "string" && order.cancelledAt.length > 0) {
+    return "cancelled";
+  }
+
+  if (typeof order.fulfilledAt === "string" && order.fulfilledAt.length > 0) {
+    return "fulfilled";
+  }
+
+  if (typeof order.pollingInterval === "number" && order.pollingInterval > 0) {
+    return "in-progress";
+  }
+
+  if (typeof order.submittedAt === "string" && order.submittedAt.length > 0) {
+    return "submitted";
+  }
+
+  if (typeof order.createdAt === "string" && order.createdAt.length > 0) {
+    return "draft";
+  }
+
+  return "unknown";
+}
+
+export function parseExistingOrdersResponse(orderRoots: unknown[]): ExistingOrderResult[] {
+  return orderRoots
+    .map((order) => parseExistingOrder(order))
+    .sort((left, right) => compareIsoDateDesc(left.createdAt, right.createdAt));
+}
+
+export function extractExistingOrdersFromApolloCache(cache: Record<string, unknown> | null): ExistingOrderResult[] {
+  if (!cache) {
+    return [];
+  }
+
+  const rootQuery = asObject(cache.ROOT_QUERY);
+  const key = Object.keys(rootQuery)
+    .filter((entry) => entry.startsWith("getConsumerOrdersWithDetails("))
+    .sort()[0];
+
+  if (!key) {
+    return [];
+  }
+
+  const values = Array.isArray(rootQuery[key]) ? rootQuery[key] : [];
+  return values.map((value) => parseExistingOrder(value, cache)).sort((left, right) => compareIsoDateDesc(left.createdAt, right.createdAt));
+}
+
+function parseExistingOrder(orderRoot: unknown, cache: Record<string, unknown> | null = null): ExistingOrderResult {
+  const order = asObject(resolveApolloCacheValue(cache, orderRoot));
+  const creator = order.creator ? asObject(resolveApolloCacheValue(cache, order.creator)) : null;
+  const deliveryAddress = order.deliveryAddress ? asObject(resolveApolloCacheValue(cache, order.deliveryAddress)) : null;
+  const store = order.store ? asObject(resolveApolloCacheValue(cache, order.store)) : null;
+  const lifecycleStatus = parseExistingOrderLifecycleStatus(order);
+  const items = parseExistingOrderItems(order.orders, cache);
+
+  return {
+    id: typeof order.id === "string" ? order.id : null,
+    orderUuid: typeof order.orderUuid === "string" ? order.orderUuid : null,
+    deliveryUuid: typeof order.deliveryUuid === "string" ? order.deliveryUuid : null,
+    createdAt: typeof order.createdAt === "string" ? order.createdAt : null,
+    submittedAt: typeof order.submittedAt === "string" ? order.submittedAt : null,
+    cancelledAt: typeof order.cancelledAt === "string" ? order.cancelledAt : null,
+    fulfilledAt: typeof order.fulfilledAt === "string" ? order.fulfilledAt : null,
+    lifecycleStatus,
+    isActive: lifecycleStatus === "submitted" || lifecycleStatus === "in-progress",
+    hasLiveTracking: typeof order.pollingInterval === "number" && order.pollingInterval > 0,
+    pollingIntervalSeconds: typeof order.pollingInterval === "number" ? order.pollingInterval : null,
+    specialInstructions: typeof order.specialInstructions === "string" ? order.specialInstructions : null,
+    isReorderable: Boolean(order.isReorderable),
+    isGift: Boolean(order.isGift),
+    isPickup: Boolean(order.isPickup),
+    isRetail: Boolean(order.isRetail),
+    isMerchantShipping: Boolean(order.isMerchantShipping),
+    containsAlcohol: Boolean(order.containsAlcohol),
+    fulfillmentType: typeof order.fulfillmentType === "string" ? order.fulfillmentType : null,
+    shoppingProtocol: typeof order.shoppingProtocol === "string" ? order.shoppingProtocol : null,
+    orderFilterType: typeof order.orderFilterType === "string" ? order.orderFilterType : null,
+    creator: creator
+      ? {
+          id: typeof creator.id === "string" ? creator.id : null,
+          firstName: typeof creator.firstName === "string" ? creator.firstName : null,
+          lastName: typeof creator.lastName === "string" ? creator.lastName : null,
+        }
+      : null,
+    deliveryAddress: deliveryAddress
+      ? {
+          id: typeof deliveryAddress.id === "string" ? deliveryAddress.id : null,
+          formattedAddress: typeof deliveryAddress.formattedAddress === "string" ? deliveryAddress.formattedAddress : null,
+        }
+      : null,
+    store: store
+      ? {
+          id: typeof store.id === "string" ? store.id : null,
+          name: typeof store.name === "string" ? store.name : null,
+          businessName: typeof asObject(resolveApolloCacheValue(cache, store.business)).name === "string"
+            ? asObject(resolveApolloCacheValue(cache, store.business)).name
+            : null,
+          phoneNumber: typeof store.phoneNumber === "string" ? store.phoneNumber : null,
+          fulfillsOwnDeliveries: typeof store.fulfillsOwnDeliveries === "boolean" ? store.fulfillsOwnDeliveries : null,
+          customerArrivedPickupInstructions:
+            typeof store.customerArrivedPickupInstructions === "string" ? store.customerArrivedPickupInstructions : null,
+          rerouteStoreId: typeof store.rerouteStoreId === "string" ? store.rerouteStoreId : null,
+        }
+      : null,
+    grandTotal: parseExistingOrderMoney(order.grandTotal, cache),
+    itemCount: items.length,
+    items,
+    likelyOutOfStockItems: Array.isArray(order.likelyOosItems)
+      ? order.likelyOosItems.map((item) => {
+          const object = asObject(resolveApolloCacheValue(cache, item));
+          return {
+            menuItemId: typeof object.menuItemId === "string" ? object.menuItemId : null,
+            name: typeof object.name === "string" ? object.name : null,
+            photoUrl: typeof object.photoUrl === "string" ? object.photoUrl : null,
+          };
+        })
+      : [],
+    recurringOrderDetails: order.recurringOrderDetails
+      ? {
+          itemNames: Array.isArray(asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).itemNames)
+            ? asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).itemNames.filter((value: unknown): value is string => typeof value === "string")
+            : [],
+          consumerId:
+            typeof asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).consumerId === "string"
+              ? asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).consumerId
+              : null,
+          recurringOrderUpcomingOrderUuid:
+            typeof asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).recurringOrderUpcomingOrderUuid === "string"
+              ? asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).recurringOrderUpcomingOrderUuid
+              : null,
+          scheduledDeliveryDate:
+            typeof asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).scheduledDeliveryDate === "string"
+              ? asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).scheduledDeliveryDate
+              : null,
+          arrivalTimeDisplayString:
+            typeof asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).arrivalTimeDisplayString === "string"
+              ? asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).arrivalTimeDisplayString
+              : null,
+          storeName:
+            typeof asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).storeName === "string"
+              ? asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).storeName
+              : null,
+          isCancelled:
+            typeof asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).isCancelled === "boolean"
+              ? asObject(resolveApolloCacheValue(cache, order.recurringOrderDetails)).isCancelled
+              : null,
+        }
+      : null,
+    bundleOrderInfo: order.bundleOrderInfo
+      ? {
+          primaryBundleOrderUuid:
+            typeof asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).primaryBundleOrderUuid === "string"
+              ? asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).primaryBundleOrderUuid
+              : null,
+          primaryBundleOrderId:
+            typeof asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).primaryBundleOrderId === "string"
+              ? asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).primaryBundleOrderId
+              : null,
+          bundleOrderUuids: Array.isArray(asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).bundleOrderUuids)
+            ? asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).bundleOrderUuids.filter((value: unknown): value is string => typeof value === "string")
+            : [],
+          bundleType:
+            typeof asObject(resolveApolloCacheValue(cache, asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).bundleOrderConfig)).bundleType === "string"
+              ? asObject(resolveApolloCacheValue(cache, asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).bundleOrderConfig)).bundleType
+              : null,
+          bundleOrderRole:
+            typeof asObject(resolveApolloCacheValue(cache, asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).bundleOrderConfig)).bundleOrderRole === "string"
+              ? asObject(resolveApolloCacheValue(cache, asObject(resolveApolloCacheValue(cache, order.bundleOrderInfo)).bundleOrderConfig)).bundleOrderRole
+              : null,
+        }
+      : null,
+    cancellationPendingRefundState:
+      typeof asObject(resolveApolloCacheValue(cache, order.cancellationPendingRefundInfo)).state === "string"
+        ? asObject(resolveApolloCacheValue(cache, order.cancellationPendingRefundInfo)).state
+        : null,
+  };
+}
+
+function parseExistingOrderMoney(value: unknown, cache: Record<string, unknown> | null): ExistingOrderMoneyResult | null {
+  if (!value) {
+    return null;
+  }
+
+  const object = asObject(resolveApolloCacheValue(cache, value));
+  return {
+    unitAmount: typeof object.unitAmount === "number" ? object.unitAmount : null,
+    currency: typeof object.currency === "string" ? object.currency : null,
+    decimalPlaces: typeof object.decimalPlaces === "number" ? object.decimalPlaces : null,
+    displayString: typeof object.displayString === "string" ? object.displayString : null,
+    sign: typeof object.sign === "string" ? object.sign : null,
+  };
+}
+
+function parseExistingOrderItems(value: unknown, cache: Record<string, unknown> | null): ExistingOrderItemResult[] {
+  const groups = Array.isArray(value) ? value : [];
+  return groups.flatMap((group) => {
+    const object = asObject(resolveApolloCacheValue(cache, group));
+    const items = Array.isArray(object.items) ? object.items : [];
+    return items.map((item) => parseExistingOrderItem(item, cache));
+  });
+}
+
+function parseExistingOrderItem(value: unknown, cache: Record<string, unknown> | null): ExistingOrderItemResult {
+  const object = asObject(resolveApolloCacheValue(cache, value));
+  return {
+    id: typeof object.id === "string" ? object.id : null,
+    name: typeof object.name === "string" ? object.name : null,
+    quantity: typeof object.quantity === "number" ? object.quantity : 0,
+    specialInstructions: typeof object.specialInstructions === "string" ? object.specialInstructions : null,
+    substitutionPreferences: typeof object.substitutionPreferences === "string" ? object.substitutionPreferences : null,
+    originalItemPrice: typeof object.originalItemPrice === "number" ? object.originalItemPrice : null,
+    purchaseType: typeof object.purchaseType === "string" ? object.purchaseType : null,
+    purchaseQuantity: parseExistingOrderQuantity(object.purchaseQuantity, cache),
+    fulfillQuantity: parseExistingOrderQuantity(object.fulfillQuantity, cache),
+    extras: Array.isArray(object.orderItemExtras)
+      ? object.orderItemExtras.map((extra) => parseExistingOrderExtra(extra, cache))
+      : [],
+  };
+}
+
+function parseExistingOrderQuantity(value: unknown, cache: Record<string, unknown> | null): ExistingOrderQuantityResult | null {
+  if (!value) {
+    return null;
+  }
+
+  const quantityRoot = asObject(resolveApolloCacheValue(cache, value));
+  const continuous = asObject(resolveApolloCacheValue(cache, quantityRoot.continuousQuantity));
+  const discrete = asObject(resolveApolloCacheValue(cache, quantityRoot.discreteQuantity));
+  const candidate = typeof continuous.quantity === "number" ? continuous : discrete;
+
+  return {
+    quantity: typeof candidate.quantity === "number" ? candidate.quantity : null,
+    unit: typeof candidate.unit === "string" ? candidate.unit : null,
+  };
+}
+
+function parseExistingOrderExtra(value: unknown, cache: Record<string, unknown> | null): ExistingOrderExtraResult {
+  const object = asObject(resolveApolloCacheValue(cache, value));
+  return {
+    menuItemExtraId: typeof object.menuItemExtraId === "string" ? object.menuItemExtraId : null,
+    name: typeof object.name === "string" ? object.name : null,
+    options: Array.isArray(object.orderItemExtraOptions)
+      ? object.orderItemExtraOptions.map((option) => parseExistingOrderExtraOption(option, cache))
+      : [],
+  };
+}
+
+function parseExistingOrderExtraOption(value: unknown, cache: Record<string, unknown> | null): ExistingOrderExtraOptionResult {
+  const object = asObject(resolveApolloCacheValue(cache, value));
+  return {
+    menuExtraOptionId: typeof object.menuExtraOptionId === "string" ? object.menuExtraOptionId : null,
+    name: typeof object.name === "string" ? object.name : null,
+    description: typeof object.description === "string" ? object.description : null,
+    price: typeof object.price === "number" ? object.price : null,
+    quantity: typeof object.quantity === "number" ? object.quantity : null,
+    extras: Array.isArray(object.orderItemExtras)
+      ? object.orderItemExtras.map((extra) => parseExistingOrderExtra(extra, cache))
+      : [],
+  };
+}
+
 function parseOptionList(optionList: unknown): ItemOptionListResult {
   const object = asObject(optionList);
   const options = Array.isArray(object.options) ? object.options : [];
@@ -2629,6 +3378,109 @@ function asObject(value: unknown): Record<string, any> {
   return value && typeof value === "object" ? (value as Record<string, any>) : {};
 }
 
+async function fetchExistingOrdersGraphql(params: { limit?: number }): Promise<ExistingOrderResult[]> {
+  const requestedLimit = params.limit;
+  const orders: ExistingOrderResult[] = [];
+  let offset = 0;
+
+  while (true) {
+    const pageSize = requestedLimit == null ? 25 : Math.min(25, Math.max(requestedLimit - orders.length, 0));
+    if (requestedLimit != null && pageSize === 0) {
+      break;
+    }
+
+    const data = await session.graphql<{ getConsumerOrdersWithDetails?: unknown[] }>(
+      "getConsumerOrdersWithDetails",
+      EXISTING_ORDERS_QUERY,
+      {
+        offset,
+        limit: pageSize === 0 ? 25 : pageSize,
+        includeCancelled: true,
+      },
+    );
+
+    const batch = parseExistingOrdersResponse(Array.isArray(data.getConsumerOrdersWithDetails) ? data.getConsumerOrdersWithDetails : []);
+    if (batch.length === 0) {
+      break;
+    }
+
+    orders.push(...batch);
+    offset += batch.length;
+
+    if (batch.length < (pageSize === 0 ? 25 : pageSize)) {
+      break;
+    }
+  }
+
+  return requestedLimit == null ? orders : orders.slice(0, requestedLimit);
+}
+
+function buildOrdersResult(input: {
+  source: "graphql" | "orders-page-cache";
+  warning: string | null;
+  orders: ExistingOrderResult[];
+  activeOnly: boolean;
+  requestedLimit?: number;
+}): OrdersResult {
+  const filtered = input.activeOnly ? input.orders.filter((order) => order.isActive) : input.orders;
+  const limited = input.requestedLimit == null ? filtered : filtered.slice(0, input.requestedLimit);
+  return {
+    success: true,
+    source: input.source,
+    warning: input.warning,
+    count: limited.length,
+    activeCount: limited.filter((order) => order.isActive).length,
+    orders: limited,
+  };
+}
+
+function findExistingOrderByIdentifier(
+  orders: ExistingOrderResult[],
+  orderId: string,
+): { matchedField: "id" | "orderUuid" | "deliveryUuid"; order: ExistingOrderResult } | null {
+  for (const field of ["orderUuid", "deliveryUuid", "id"] as const) {
+    const match = orders.find((order) => order[field] === orderId);
+    if (match) {
+      return { matchedField: field, order: match };
+    }
+  }
+
+  return null;
+}
+
+function resolveApolloCacheValue(cache: Record<string, unknown> | null, value: unknown): unknown {
+  if (!cache) {
+    return value;
+  }
+
+  if (typeof value === "string" && value in cache) {
+    return cache[value];
+  }
+
+  const object = asObject(value);
+  if (typeof object.__ref === "string" && object.__ref in cache) {
+    return cache[object.__ref];
+  }
+
+  return value;
+}
+
+function compareIsoDateDesc(left: string | null, right: string | null): number {
+  const leftValue = left ? Date.parse(left) : Number.NEGATIVE_INFINITY;
+  const rightValue = right ? Date.parse(right) : Number.NEGATIVE_INFINITY;
+  return rightValue - leftValue;
+}
+
+function isOrderHistoryChallengeError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /non-JSON response|Checking if the site connection is secured|cf-mitigated|DoorDash getConsumerOrdersWithDetails returned HTTP 403/i.test(
+    error.message,
+  );
+}
+
 function isRetryablePageEvaluateError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
@@ -2709,6 +3561,14 @@ async function hasStorageState(): Promise<boolean> {
   }
 }
 
+async function hasPersistedSessionArtifacts(): Promise<boolean> {
+  if (await hasStorageState()) {
+    return true;
+  }
+
+  return (await readStoredCookies()).length > 0;
+}
+
 async function readStoredCookies(): Promise<Cookie[]> {
   try {
     const raw = await readFile(getCookiesPath(), "utf8");
@@ -2719,6 +3579,3 @@ async function readStoredCookies(): Promise<Cookie[]> {
   }
 }
 
-export function getStorageStatePath(): string {
-  return join(dirname(getCookiesPath()), "storage-state.json");
-}
