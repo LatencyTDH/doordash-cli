@@ -14,7 +14,7 @@ All commands print JSON.
 
 ## Session setup
 
-Install the matching Chromium build once if you do not already have it:
+If your environment does not already have the bundled Playwright runtime installed, install it once:
 
 ```bash
 doordash-cli install-browser
@@ -26,13 +26,13 @@ Check whether you already have reusable session state:
 doordash-cli auth-check
 ```
 
-If needed, launch Chromium for a one-time sign-in and save reusable state:
+If your saved local state is still valid, this exits immediately. Otherwise it tries to reuse a discoverable signed-in browser session, or opens a temporary Chromium login window and saves the session there:
 
 ```bash
 doordash-cli login
 ```
 
-Reset saved session state when you want a clean start:
+Reset saved session state when you want a clean logged-out start. This also disables automatic browser-session reuse until your next explicit `doordash-cli login`:
 
 ```bash
 doordash-cli logout

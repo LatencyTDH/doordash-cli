@@ -1,12 +1,15 @@
+import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import { chromium, type Browser, type BrowserContext, type Cookie, type Page } from "playwright";
-import { getCookiesPath, getStorageStatePath } from "./session-storage.js";
+import { getBrowserImportBlockPath, getCookiesPath, getStorageStatePath } from "./session-storage.js";
 
 const BASE_URL = "https://www.doordash.com";
+const AUTH_BOOTSTRAP_URL = `${BASE_URL}/home`;
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 180_000;
+const AUTH_BOOTSTRAP_POLL_INTERVAL_MS = 2_000;
+const AUTH_BOOTSTRAP_NO_DISCOVERY_GRACE_MS = 10_000;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
@@ -726,9 +729,17 @@ export type AuthResult = {
   storageStatePath: string;
 };
 
-export type AuthBootstrapResult = AuthResult & {
-  message: string;
-};
+export type AuthBootstrapResult =
+  | (AuthResult & {
+      success: true;
+      isLoggedIn: true;
+      message: string;
+    })
+  | (Omit<AuthResult, "success" | "isLoggedIn"> & {
+      success: false;
+      isLoggedIn: false;
+      message: string;
+    });
 
 export type SearchRestaurantResult = {
   id: string;
@@ -1273,14 +1284,14 @@ class DoorDashDirectSession {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
-  private attemptedManagedImport = false;
+  private attemptedBrowserImport = false;
 
   async init(options: DirectBrowserOptions = {}): Promise<Page> {
     if (this.page) {
       return this.page;
     }
 
-    await this.maybeImportManagedBrowserSession();
+    await this.maybeImportBrowserSession();
 
     const storageStatePath = getStorageStatePath();
     this.browser = await chromium.launch({
@@ -1418,26 +1429,46 @@ class DoorDashDirectSession {
     throw new Error(`DoorDash request failed for ${input.url}`);
   }
 
-  private async maybeImportManagedBrowserSession(): Promise<void> {
-    if (this.attemptedManagedImport) {
+  markBrowserImportAttempted(): void {
+    this.attemptedBrowserImport = true;
+  }
+
+  resetBrowserImportAttempted(): void {
+    this.attemptedBrowserImport = false;
+  }
+
+  private async maybeImportBrowserSession(): Promise<void> {
+    if (this.attemptedBrowserImport) {
       return;
     }
 
-    this.attemptedManagedImport = true;
-    if (await hasPersistedSessionArtifacts()) {
+    this.attemptedBrowserImport = true;
+    if (await hasBlockedBrowserImport()) {
       return;
     }
 
-    await importManagedBrowserSessionIfAvailable().catch(() => {});
+    await importBrowserSessionIfAvailable().catch(() => {});
   }
 }
 
+type BootstrapAuthSessionDeps = {
+  clearBlockedBrowserImport: () => Promise<void>;
+  checkPersistedAuth: () => Promise<AuthResult | null>;
+  importBrowserSessionIfAvailable: () => Promise<boolean>;
+  markBrowserImportAttempted: () => void;
+  getAttachedBrowserCdpCandidates: () => Promise<string[]>;
+  getReachableCdpCandidates: (candidates: string[]) => Promise<string[]>;
+  openUrlInAttachedBrowser: (input: { cdpUrl: string; targetUrl: string }) => Promise<boolean>;
+  openUrlInDefaultBrowser: (targetUrl: string) => Promise<boolean>;
+  waitForAttachedBrowserSessionImport: (input: { timeoutMs: number; pollIntervalMs: number }) => Promise<boolean>;
+  waitForManagedBrowserLogin: (input: { targetUrl: string; timeoutMs: number; pollIntervalMs: number }) => Promise<AuthResult | null>;
+  checkAuthDirect: () => Promise<AuthResult>;
+  log: (message: string) => void;
+};
+
 const session = new DoorDashDirectSession();
 
-export async function checkAuthDirect(): Promise<AuthResult> {
-  const data = await session.graphql<{ consumer: ConsumerGraph | null }>("consumer", CONSUMER_QUERY, {});
-  const consumer = data.consumer ?? null;
-
+function buildAuthResult(consumer: ConsumerGraph | null): AuthResult {
   return {
     success: true,
     isLoggedIn: Boolean(consumer && consumer.isGuest === false),
@@ -1458,39 +1489,164 @@ export async function checkAuthDirect(): Promise<AuthResult> {
   };
 }
 
-export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
-  const page = await session.init({ headed: true });
-  console.error("A Chromium window is open for DoorDash session bootstrap.");
-  console.error("1) Sign in if needed.");
-  console.error("2) Confirm your delivery address if needed.");
-  console.error("3) Return here and press Enter to save the session for direct API use.");
-
-  await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
-
-  const rl = createInterface({ input, output });
-  try {
-    await rl.question("");
-  } finally {
-    rl.close();
+function buildAuthBootstrapSuccess(auth: AuthResult, message: string): AuthBootstrapResult {
+  if (!auth.isLoggedIn) {
+    return buildAuthBootstrapFailure(auth, message);
   }
 
-  await session.saveState();
-  const auth = await checkAuthDirect();
   return {
     ...auth,
-    message: auth.isLoggedIn
-      ? "DoorDash session saved for direct API use."
-      : "DoorDash session state saved, but the consumer still appears to be logged out or guest-only.",
+    success: true,
+    isLoggedIn: true,
+    message,
   };
+}
+
+function buildAuthBootstrapFailure(auth: AuthResult | null, message: string): AuthBootstrapResult {
+  const base = auth ?? buildAuthResult(null);
+  return {
+    ...base,
+    success: false,
+    isLoggedIn: false,
+    message,
+  };
+}
+
+export async function checkAuthDirect(): Promise<AuthResult> {
+  const data = await session.graphql<{ consumer: ConsumerGraph | null }>("consumer", CONSUMER_QUERY, {});
+  return buildAuthResult(data.consumer ?? null);
+}
+
+export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDeps): Promise<AuthBootstrapResult> {
+  await deps.clearBlockedBrowserImport().catch(() => {});
+
+  const persistedAuth = await deps.checkPersistedAuth().catch(() => null);
+  if (persistedAuth?.isLoggedIn) {
+    return buildAuthBootstrapSuccess(persistedAuth, "Already signed in with saved local DoorDash session state. No browser interaction was needed.");
+  }
+
+  const imported = await deps.importBrowserSessionIfAvailable().catch(() => false);
+  deps.markBrowserImportAttempted();
+  if (imported) {
+    const auth = await deps.checkAuthDirect();
+    return auth.isLoggedIn
+      ? buildAuthBootstrapSuccess(auth, "Imported an existing signed-in browser session and saved it for direct API use.")
+      : buildAuthBootstrapFailure(auth, "Imported browser session state, but the consumer still appears to be logged out or guest-only.");
+  }
+
+  const attachedCandidates = await deps.getAttachedBrowserCdpCandidates();
+  const reachableCandidates = await deps.getReachableCdpCandidates(attachedCandidates);
+
+  if (reachableCandidates.length > 0) {
+    const openedAttachedBrowser = await deps.openUrlInAttachedBrowser({
+      cdpUrl: reachableCandidates[0]!,
+      targetUrl: AUTH_BOOTSTRAP_URL,
+    });
+    const openedDefaultBrowser = openedAttachedBrowser ? false : await deps.openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
+
+    deps.log(
+      openedAttachedBrowser
+        ? `Opened DoorDash in the reusable browser session I'm watching: ${AUTH_BOOTSTRAP_URL}`
+        : openedDefaultBrowser
+          ? `Found a reusable browser connection, but couldn't drive it directly, so I opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`
+          : `Detected a reusable browser connection, but couldn't open DoorDash automatically. Open this URL in that watched browser to continue: ${AUTH_BOOTSTRAP_URL}`,
+    );
+    deps.log(
+      `Detected ${reachableCandidates.length} reusable browser connection(s). Finish the sign-in in that browser window and I'll import it automatically for up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds.`,
+    );
+
+    const importedAfterWait = await deps.waitForAttachedBrowserSessionImport({
+      timeoutMs: AUTH_BOOTSTRAP_TIMEOUT_MS,
+      pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
+    });
+
+    const auth = await deps.checkAuthDirect();
+    if (importedAfterWait) {
+      return auth.isLoggedIn
+        ? buildAuthBootstrapSuccess(auth, "Opened DoorDash in a reusable browser session, detected the signed-in consumer state, and saved it for direct API use.")
+        : buildAuthBootstrapFailure(auth, "Detected browser session state in the watched browser, but the consumer still appears logged out or guest-only.");
+    }
+
+    return buildAuthBootstrapFailure(
+      auth,
+      openedAttachedBrowser || openedDefaultBrowser
+        ? `Opened DoorDash and watched reusable browser connections for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in DoorDash session was imported. Finish the login in that watched browser and rerun dd-cli login.`
+        : `Watched reusable browser connections for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds without importing a signed-in DoorDash session. Open ${AUTH_BOOTSTRAP_URL} manually in the watched browser, finish signing in, then rerun dd-cli login.`,
+    );
+  }
+
+  deps.log(
+    "I couldn't find a reusable browser connection, so I'm opening a temporary Chromium login window that the CLI can watch directly.",
+  );
+
+  const managedAuth = await deps.waitForManagedBrowserLogin({
+    targetUrl: AUTH_BOOTSTRAP_URL,
+    timeoutMs: AUTH_BOOTSTRAP_TIMEOUT_MS,
+    pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
+  });
+
+  if (managedAuth) {
+    return managedAuth.isLoggedIn
+      ? buildAuthBootstrapSuccess(managedAuth, "Opened a temporary Chromium login window, detected the signed-in session there, and saved it for direct API use.")
+      : buildAuthBootstrapFailure(managedAuth, `Opened a temporary Chromium login window and watched for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no authenticated DoorDash session was established.`);
+  }
+
+  const openedBrowser = await deps.openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
+  deps.log(
+    openedBrowser
+      ? `I couldn't launch the temporary Chromium login window, so I opened DoorDash in your default browser instead: ${AUTH_BOOTSTRAP_URL}`
+      : `Couldn't open the temporary Chromium login window or your default browser automatically. Open this URL to continue: ${AUTH_BOOTSTRAP_URL}`,
+  );
+  deps.log(
+    "This environment still isn't exposing a reusable browser session the CLI can import, so I won't keep you waiting for the full login timeout. Once you've exposed a compatible browser session, rerun `dd-cli login`.",
+  );
+
+  const importedAfterGrace = await deps.waitForAttachedBrowserSessionImport({
+    timeoutMs: AUTH_BOOTSTRAP_NO_DISCOVERY_GRACE_MS,
+    pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
+  });
+
+  const auth = await deps.checkAuthDirect();
+  if (importedAfterGrace) {
+    return auth.isLoggedIn
+      ? buildAuthBootstrapSuccess(auth, "A reusable browser session appeared a few seconds later and was saved for direct API use.")
+      : buildAuthBootstrapFailure(auth, "Detected browser session state after opening the browser, but the consumer still appears logged out or guest-only.");
+  }
+
+  return buildAuthBootstrapFailure(
+    auth,
+    openedBrowser
+      ? "Opened DoorDash in your default browser, but this environment still isn't exposing a reusable browser session the CLI can import. Finish signing in there, make a compatible browser session discoverable, then rerun `dd-cli login`."
+      : "Couldn't open a watchable browser automatically, and this environment still isn't exposing a reusable browser session the CLI can import. Open the DoorDash home page manually, make a compatible browser session discoverable, then rerun `dd-cli login`.",
+  );
+}
+
+export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
+  return bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport,
+    checkPersistedAuth: getPersistedAuthDirect,
+    importBrowserSessionIfAvailable,
+    markBrowserImportAttempted: () => session.markBrowserImportAttempted(),
+    getAttachedBrowserCdpCandidates,
+    getReachableCdpCandidates,
+    openUrlInAttachedBrowser,
+    openUrlInDefaultBrowser,
+    waitForAttachedBrowserSessionImport,
+    waitForManagedBrowserLogin,
+    checkAuthDirect,
+    log: (message) => console.error(message),
+  });
 }
 
 export async function clearStoredSession(): Promise<{ success: true; message: string; cookiesPath: string; storageStatePath: string }> {
   await session.close();
+  session.resetBrowserImportAttempted();
   await rm(getCookiesPath(), { force: true }).catch(() => {});
   await rm(getStorageStatePath(), { force: true }).catch(() => {});
+  await blockBrowserImport();
   return {
     success: true,
-    message: "DoorDash cookies and stored browser session state cleared.",
+    message: "DoorDash cookies and stored browser session state cleared. Automatic browser-session reuse is disabled until the next `dd-cli login`.",
     cookiesPath: getCookiesPath(),
     storageStatePath: getStorageStatePath(),
   };
@@ -2370,7 +2526,7 @@ function normalizeAddressText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-export function isDoorDashUrl(value: string): boolean {
+function isDoorDashUrl(value: string): boolean {
   try {
     const url = new URL(value);
     return url.hostname === "doordash.com" || url.hostname.endsWith(".doordash.com");
@@ -2379,14 +2535,14 @@ export function isDoorDashUrl(value: string): boolean {
   }
 }
 
-export function hasDoorDashCookies(cookies: ReadonlyArray<Pick<Cookie, "domain">>): boolean {
+function hasDoorDashCookies(cookies: ReadonlyArray<Pick<Cookie, "domain">>): boolean {
   return cookies.some((cookie) => {
     const domain = cookie.domain.trim().replace(/^\./, "").toLowerCase();
     return domain === "doordash.com" || domain.endsWith(".doordash.com");
   });
 }
 
-export function selectManagedBrowserImportMode(input: {
+export function selectAttachedBrowserImportMode(input: {
   pageUrls: readonly string[];
   cookies: ReadonlyArray<Pick<Cookie, "domain">>;
 }): "page" | "cookies" | "skip" {
@@ -2401,13 +2557,18 @@ export function selectManagedBrowserImportMode(input: {
   return "skip";
 }
 
-async function importManagedBrowserSessionIfAvailable(): Promise<boolean> {
-  for (const cdpUrl of await getManagedBrowserCdpCandidates()) {
+async function importBrowserSessionIfAvailable(): Promise<boolean> {
+  return await importBrowserSessionFromCdpCandidates(await getAttachedBrowserCdpCandidates());
+}
+
+async function importBrowserSessionFromCdpCandidates(candidates: string[]): Promise<boolean> {
+  for (const cdpUrl of candidates) {
     if (!(await isCdpEndpointReachable(cdpUrl))) {
       continue;
     }
 
     let browser: Browser | null = null;
+    let tempPage: Page | null = null;
     try {
       browser = await chromium.connectOverCDP(cdpUrl);
       const context = browser.contexts()[0];
@@ -2417,32 +2578,41 @@ async function importManagedBrowserSessionIfAvailable(): Promise<boolean> {
 
       const cookies = await context.cookies();
       const pages = context.pages();
-      const reusablePage = pages.find((candidate) => isDoorDashUrl(candidate.url())) ?? null;
-      const importMode = selectManagedBrowserImportMode({
-        pageUrls: reusablePage ? [reusablePage.url()] : [],
+      const importMode = selectAttachedBrowserImportMode({
+        pageUrls: pages.map((candidate) => candidate.url()),
         cookies,
       });
-
       if (importMode === "skip") {
         continue;
       }
 
-      if (reusablePage) {
-        const consumerData = await fetchConsumerViaPage(reusablePage).catch(() => null);
-        const consumer = consumerData?.consumer ?? null;
-        if (consumer?.isGuest === false) {
-          await saveContextState(context, cookies);
+      if (importMode === "cookies") {
+        await saveContextState(context, cookies);
+        if (await validatePersistedDirectSessionArtifacts()) {
           return true;
         }
       }
 
-      if (hasDoorDashCookies(cookies)) {
-        await saveContextState(context, cookies);
-        return true;
+      let page = pages.find((candidate) => isDoorDashUrl(candidate.url())) ?? null;
+      if (!page) {
+        tempPage = await context.newPage();
+        page = tempPage;
+        await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+        await page.waitForTimeout(1_000);
       }
+
+      const consumerData = await fetchConsumerViaPage(page).catch(() => null);
+      const consumer = consumerData?.consumer ?? null;
+      if (!consumer || consumer.isGuest !== false) {
+        continue;
+      }
+
+      await saveContextState(context, cookies);
+      return true;
     } catch {
       continue;
     } finally {
+      await tempPage?.close().catch(() => {});
       await browser?.close().catch(() => {});
     }
   }
@@ -2467,7 +2637,7 @@ async function fetchConsumerViaPage(page: Page): Promise<{ consumer: ConsumerGra
     },
   );
 
-  return parseGraphQlResponse<{ consumer: ConsumerGraph | null }>("managedBrowserConsumerImport", raw.status, raw.text);
+  return parseGraphQlResponse<{ consumer: ConsumerGraph | null }>("attachedBrowserConsumerImport", raw.status, raw.text);
 }
 
 async function saveContextState(context: BrowserContext, cookies: Cookie[] | null = null): Promise<void> {
@@ -2479,45 +2649,340 @@ async function saveContextState(context: BrowserContext, cookies: Cookie[] | nul
   await writeFile(getCookiesPath(), JSON.stringify(resolvedCookies, null, 2));
 }
 
-async function getManagedBrowserCdpCandidates(): Promise<string[]> {
-  const candidates = new Set<string>();
-  for (const value of [
-    process.env.DOORDASH_MANAGED_BROWSER_CDP_URL,
-    process.env.OPENCLAW_BROWSER_CDP_URL,
-    process.env.OPENCLAW_OPENCLAW_CDP_URL,
-  ]) {
-    if (typeof value === "string" && value.trim().length > 0) {
-      candidates.add(value.trim().replace(/\/$/, ""));
+async function getPersistedAuthDirect(): Promise<AuthResult | null> {
+  if (!(await hasPersistedSessionArtifacts())) {
+    return null;
+  }
+
+  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
+  let page: Page | null = null;
+
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"],
+    });
+
+    const storageStatePath = getStorageStatePath();
+    const hasStorage = await hasStorageState();
+    context = await browser.newContext({
+      userAgent: DEFAULT_USER_AGENT,
+      locale: "en-US",
+      viewport: { width: 1280, height: 900 },
+      ...(hasStorage ? { storageState: storageStatePath } : {}),
+    });
+
+    if (!hasStorage) {
+      const cookies = await readStoredCookies();
+      if (cookies.length === 0) {
+        return null;
+      }
+      await context.addCookies(cookies);
     }
+
+    page = await context.newPage();
+    await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+    await page.waitForTimeout(1_000);
+
+    const consumerData = await fetchConsumerViaPage(page).catch(() => null);
+    return buildAuthResult(consumerData?.consumer ?? null);
+  } catch {
+    return null;
+  } finally {
+    await page?.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
+  }
+}
+
+async function validatePersistedDirectSessionArtifacts(): Promise<boolean> {
+  const auth = await getPersistedAuthDirect();
+  return auth?.isLoggedIn === true;
+}
+
+export function resolveAttachedBrowserCdpCandidates(
+  env: NodeJS.ProcessEnv,
+  configCandidates: string[] = [],
+): string[] {
+  const candidates = new Set<string>();
+  const addCandidate = (value: unknown) => {
+    if (typeof value === "string" && value.trim().length > 0) {
+      candidates.add(normalizeCdpCandidate(value));
+    }
+  };
+
+  addCdpCandidatesFromList(candidates, env.DOORDASH_ATTACHED_BROWSER_CDP_URLS);
+  addCdpCandidatesFromList(candidates, env.DOORDASH_BROWSER_CDP_URLS);
+  addCandidate(env.DOORDASH_ATTACHED_BROWSER_CDP_URL);
+  addCandidate(env.DOORDASH_BROWSER_CDP_URL);
+  addCdpPortCandidatesFromList(candidates, env.DOORDASH_BROWSER_CDP_PORTS);
+  const portCandidate = parseCdpPortCandidate(env.DOORDASH_BROWSER_CDP_PORT);
+  if (portCandidate) {
+    candidates.add(portCandidate);
   }
 
-  for (const value of await readOpenClawBrowserConfigCandidates()) {
-    candidates.add(value.replace(/\/$/, ""));
+  for (const compatibilityValue of [env.DOORDASH_MANAGED_BROWSER_CDP_URL, env.OPENCLAW_BROWSER_CDP_URL, env.OPENCLAW_OPENCLAW_CDP_URL]) {
+    addCandidate(compatibilityValue);
   }
 
-  candidates.add("http://127.0.0.1:18800");
+  for (const value of configCandidates) {
+    addCandidate(value);
+  }
+
+  addCandidate("http://127.0.0.1:18792");
+  addCandidate("http://127.0.0.1:18800");
+  addCandidate("http://127.0.0.1:9222");
   return [...candidates];
 }
 
-async function readOpenClawBrowserConfigCandidates(): Promise<string[]> {
+async function getAttachedBrowserCdpCandidates(): Promise<string[]> {
+  const configCandidates = await readOpenClawBrowserConfigCandidates({ profileNames: ["user", "chrome", "openclaw"] });
+  return resolveAttachedBrowserCdpCandidates(process.env, configCandidates);
+}
+
+async function getReachableCdpCandidates(candidates: string[]): Promise<string[]> {
+  const reachable: string[] = [];
+  for (const cdpUrl of candidates) {
+    if (await isCdpEndpointReachable(cdpUrl)) {
+      reachable.push(cdpUrl);
+    }
+  }
+  return reachable;
+}
+
+async function waitForAttachedBrowserSessionImport(input: { timeoutMs: number; pollIntervalMs: number }): Promise<boolean> {
+  const deadline = Date.now() + input.timeoutMs;
+  while (Date.now() <= deadline) {
+    if (await importBrowserSessionIfAvailable().catch(() => false)) {
+      return true;
+    }
+
+    if (Date.now() >= deadline) {
+      break;
+    }
+
+    await wait(input.pollIntervalMs);
+  }
+
+  return false;
+}
+
+export function resolveSystemBrowserOpenCommand(
+  targetUrl: string,
+  targetPlatform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } | null {
+  if (targetPlatform === "darwin") {
+    return { command: "open", args: [targetUrl] };
+  }
+
+  if (targetPlatform === "win32") {
+    return { command: "cmd", args: ["/c", "start", "", targetUrl] };
+  }
+
+  if (["linux", "freebsd", "openbsd", "netbsd", "sunos", "android"].includes(targetPlatform)) {
+    return { command: "xdg-open", args: [targetUrl] };
+  }
+
+  return null;
+}
+
+async function openUrlInDefaultBrowser(targetUrl: string): Promise<boolean> {
+  const command = resolveSystemBrowserOpenCommand(targetUrl);
+  if (!command) {
+    return false;
+  }
+
+  return await new Promise((resolve) => {
+    const child = spawn(command.command, command.args, {
+      detached: process.platform !== "win32",
+      stdio: "ignore",
+    });
+
+    child.once("error", () => resolve(false));
+    child.once("spawn", () => {
+      child.unref();
+      resolve(true);
+    });
+  });
+}
+
+async function openUrlInAttachedBrowser(input: { cdpUrl: string; targetUrl: string }): Promise<boolean> {
+  let browser: Browser | null = null;
+
+  try {
+    browser = await chromium.connectOverCDP(input.cdpUrl);
+    const context = browser.contexts()[0];
+    if (!context) {
+      return false;
+    }
+
+    let page = context.pages().find((candidate) => isDoorDashUrl(candidate.url())) ?? null;
+    if (!page) {
+      page = await context.newPage();
+    }
+
+    await page.goto(input.targetUrl, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+    await page.bringToFront().catch(() => {});
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await browser?.close().catch(() => {});
+  }
+}
+
+async function waitForManagedBrowserLogin(input: {
+  targetUrl: string;
+  timeoutMs: number;
+  pollIntervalMs: number;
+}): Promise<AuthResult | null> {
+  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
+  let page: Page | null = null;
+
+  try {
+    browser = await chromium.launch({
+      headless: false,
+      args: ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"],
+    });
+
+    const storageStatePath = getStorageStatePath();
+    const hasStorage = await hasStorageState();
+    context = await browser.newContext({
+      userAgent: DEFAULT_USER_AGENT,
+      locale: "en-US",
+      viewport: { width: 1280, height: 900 },
+      ...(hasStorage ? { storageState: storageStatePath } : {}),
+    });
+
+    if (!hasStorage) {
+      const cookies = await readStoredCookies();
+      if (cookies.length > 0) {
+        await context.addCookies(cookies);
+      }
+    }
+
+    page = await context.newPage();
+    await page.goto(input.targetUrl, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+    await page.bringToFront().catch(() => {});
+
+    const deadline = Date.now() + input.timeoutMs;
+    while (Date.now() <= deadline) {
+      await saveContextState(context).catch(() => {});
+      const auth = await getPersistedAuthDirect();
+      if (auth?.isLoggedIn) {
+        return auth;
+      }
+
+      if (page.isClosed()) {
+        break;
+      }
+
+      if (Date.now() >= deadline) {
+        break;
+      }
+
+      await wait(input.pollIntervalMs);
+    }
+
+    await saveContextState(context).catch(() => {});
+    return (await getPersistedAuthDirect()) ?? buildAuthResult(null);
+  } catch (error) {
+    if (isPlaywrightBrowserInstallMissingError(error)) {
+      return null;
+    }
+
+    return null;
+  } finally {
+    await page?.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
+  }
+}
+
+function isPlaywrightBrowserInstallMissingError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("executable doesn't exist") || message.includes("please run the following command") || message.includes("playwright install");
+}
+
+function normalizeCdpCandidate(value: string): string {
+  return value.trim().replace(/\/$/, "");
+}
+
+function addCdpCandidatesFromList(candidates: Set<string>, value: string | undefined): void {
+  if (!value) {
+    return;
+  }
+
+  for (const entry of value.split(/[,\n]/)) {
+    const trimmed = entry.trim();
+    if (trimmed) {
+      candidates.add(normalizeCdpCandidate(trimmed));
+    }
+  }
+}
+
+function addCdpPortCandidatesFromList(candidates: Set<string>, value: string | undefined): void {
+  if (!value) {
+    return;
+  }
+
+  for (const entry of value.split(/[,\n]/)) {
+    const portCandidate = parseCdpPortCandidate(entry.trim());
+    if (portCandidate) {
+      candidates.add(portCandidate);
+    }
+  }
+}
+
+function parseCdpPortCandidate(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return `http://127.0.0.1:${parsed}`;
+}
+
+function appendBrowserConfigCandidate(candidates: string[], value: unknown): void {
+  const object = asObject(value);
+  if (typeof object.cdpUrl === "string" && object.cdpUrl.trim()) {
+    candidates.push(normalizeCdpCandidate(object.cdpUrl));
+  } else if (typeof object.cdpPort === "number" && Number.isInteger(object.cdpPort)) {
+    candidates.push(`http://127.0.0.1:${object.cdpPort}`);
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function readOpenClawBrowserConfigCandidates(input: { profileNames: string[] }): Promise<string[]> {
   try {
     const raw = await readFile(join(homedir(), ".openclaw", "openclaw.json"), "utf8");
     const parsed = safeJsonParse<Record<string, unknown>>(raw);
     const browserConfig = asObject(parsed?.browser);
+    const profiles = asObject(browserConfig.profiles);
     const candidates: string[] = [];
 
-    const pushCandidate = (value: unknown) => {
-      const object = asObject(value);
-      if (typeof object.cdpUrl === "string" && object.cdpUrl.trim()) {
-        candidates.push(object.cdpUrl.trim());
-      } else if (typeof object.cdpPort === "number" && Number.isInteger(object.cdpPort)) {
-        candidates.push(`http://127.0.0.1:${object.cdpPort}`);
-      }
-    };
+    appendBrowserConfigCandidate(candidates, browserConfig);
+    appendBrowserConfigCandidate(candidates, browserConfig.openclaw);
 
-    pushCandidate(browserConfig);
-    pushCandidate(browserConfig.openclaw);
-    pushCandidate(asObject(browserConfig.profiles).openclaw);
+    for (const profileName of input.profileNames) {
+      appendBrowserConfigCandidate(candidates, profiles[profileName]);
+    }
+
     return dedupeBy(candidates, (value) => value);
   } catch {
     return [];
@@ -3295,6 +3760,24 @@ function truncate(value: string, length: number): string {
 
 async function ensureConfigDir(): Promise<void> {
   await mkdir(dirname(getCookiesPath()), { recursive: true });
+}
+
+async function hasBlockedBrowserImport(): Promise<boolean> {
+  try {
+    await readFile(getBrowserImportBlockPath(), "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function blockBrowserImport(): Promise<void> {
+  await ensureConfigDir();
+  await writeFile(getBrowserImportBlockPath(), "logged-out\n");
+}
+
+async function clearBlockedBrowserImport(): Promise<void> {
+  await rm(getBrowserImportBlockPath(), { force: true }).catch(() => {});
 }
 
 async function hasStorageState(): Promise<boolean> {

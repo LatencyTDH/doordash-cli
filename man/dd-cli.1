@@ -1,4 +1,4 @@
-.TH DD-CLI 1 "2026-03-11" "doordash-cli 0.3.0" "User Commands"
+.TH DD-CLI 1 "2026-04-10" "doordash-cli 0.3.3" "User Commands"
 .SH NAME
 dd-cli, doordash-cli \- unofficial cart-safe DoorDash CLI for browsing, read-only existing-order inspection, and cart management
 .SH SYNOPSIS
@@ -30,19 +30,27 @@ is installed as a lowercase alias.
 .SH COMMANDS
 .TP
 .B install-browser
-Install the matching Playwright Chromium build used by this package.
+Install the bundled Playwright Chromium runtime used when the CLI needs a
+local browser, including the temporary login-window fallback.
 .TP
 .B auth-check
 Verify whether the saved session appears authenticated. This command can also
-quietly reuse an already-signed-in compatible managed-browser DoorDash session
-when a usable CDP endpoint is available.
+quietly reuse or import an already-signed-in browser session when one is
+available, unless
+.B logout
+explicitly disabled that auto-reuse.
 .TP
 .B login
-Launch Chromium for a one-time manual sign-in flow, then save reusable browser
-state for later direct API calls.
+Reuse saved local auth when possible. Otherwise try to import a discoverable
+signed-in browser session, or open a temporary Chromium login window and save
+that session there. If authentication is still not established,
+.B login
+exits non-zero.
 .TP
 .B logout
-Delete stored session material used by this CLI.
+Delete stored session material used by this CLI and disable automatic
+browser-session reuse until the next explicit
+.BR login .
 .TP
 .BI "set-address --address " ADDRESS
 Resolve and persist the active delivery address. Saved addresses are reused when
@@ -152,7 +160,7 @@ dd-cli --version
 man dd-cli
 .EE
 .PP
-Install the matching browser build once:
+Install the bundled runtime once if needed:
 .PP
 .EX
 doordash-cli install-browser
@@ -195,14 +203,18 @@ The CLI persists reusable session state under the user's configuration
 directory. The exact file layout is an implementation detail and may evolve over
 time, but the saved state is reused across runs unless cleared with
 .BR logout .
+After
+.BR logout ,
+automatic browser-session reuse stays disabled until the next explicit
+.BR login .
 .SH ENVIRONMENT
-.TP
-.B DOORDASH_MANAGED_BROWSER_CDP_URL
-Preferred Chrome DevTools Protocol endpoint for importing an already-signed-in
-compatible managed-browser session.
 .PP
-The CLI may also honor additional compatible CDP endpoint environment variables
-for integration convenience.
+In the common case you should not need to configure browser plumbing manually.
+For attached-browser reuse, the CLI can probe compatible CDP URLs/ports and a
+few localhost defaults. If no reusable browser connection is discoverable,
+login falls back to a temporary Chromium window it can watch directly. See
+.I docs/install.md
+for setup and troubleshooting.
 .SH EXIT STATUS
 .TP
 .B 0

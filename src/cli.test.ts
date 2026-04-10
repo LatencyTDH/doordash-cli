@@ -1,20 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { SAFE_COMMANDS, assertAllowedFlags, assertSafeCommand } from "./lib.js";
-import { parseArgv, version } from "./cli.js";
+import { commandExitCode, parseArgv, version } from "./cli.js";
 
 const distDir = dirname(fileURLToPath(import.meta.url));
 const binPath = join(distDir, "bin.js");
 
-function runCli(args: string[]) {
+function runCli(args: string[], env?: NodeJS.ProcessEnv) {
   return spawnSync(process.execPath, [binPath, ...args], {
     encoding: "utf8",
+    env: env ? { ...process.env, ...env } : process.env,
   });
 }
 
@@ -125,9 +126,14 @@ test("help output shows the direct read-only/cart-safe command surface", () => {
   assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /--version, -v/);
   assert.match(result.stdout, /man dd-cli/);
+  assert.match(result.stdout, /login reuses saved local auth when possible, otherwise imports a signed-in browser session or opens a temporary Chromium login window\./);
+  assert.match(result.stdout, /login exits non-zero if authentication is still not established\./);
+  assert.match(result.stdout, /auth-check reports saved-session status and can quietly reuse\/import a signed-in browser session unless logout disabled that auto-reuse\./);
+  assert.match(result.stdout, /logout clears saved session files and keeps automatic browser-session reuse off until the next login\./);
   assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
   assert.doesNotMatch(result.stdout, /auth-bootstrap/);
   assert.doesNotMatch(result.stdout, /auth-clear/);
+  assert.match(result.stdout, /temporary Chromium login window/i);
   assert.doesNotMatch(result.stdout, /Dd-cli/);
 });
 
@@ -139,6 +145,8 @@ test("repository ships man pages for the supported lowercase command names", () 
   assert.match(readFileSync(ddManPath, "utf8"), /\.B login/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-bootstrap/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-clear/);
+  assert.match(readFileSync(ddManPath, "utf8"), /automatic\s+browser-session reuse stays disabled until the next explicit/i);
+  assert.match(readFileSync(ddManPath, "utf8"), /temporary Chromium.*window/i);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /Dd-cli/);
   assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
 });
@@ -179,6 +187,39 @@ test("legacy auth command invocations point users to login/logout", () => {
   assert.equal(logoutRename.status, 1);
   assert.match(logoutRename.stderr, /Unsupported command: auth-clear/);
   assert.match(logoutRename.stderr, /renamed it to logout/);
+});
+
+test("commandExitCode treats failed login results as non-zero without changing read-only auth-check semantics", () => {
+  assert.equal(commandExitCode("login", { success: false, isLoggedIn: false }), 1);
+  assert.equal(commandExitCode("login", { success: true, isLoggedIn: true }), 0);
+  assert.equal(commandExitCode("auth-check", { success: true, isLoggedIn: false }), 0);
+});
+
+test("logout clears persisted session artifacts in the active home directory", async () => {
+  const tempHome = await mkdtemp(join(tmpdir(), "doordash-cli-home-"));
+  const sessionDir = join(tempHome, ".config", "striderlabs-mcp-doordash");
+  const cookiesPath = join(sessionDir, "cookies.json");
+  const storageStatePath = join(sessionDir, "storage-state.json");
+  const browserImportBlockPath = join(sessionDir, "browser-import-blocked");
+  mkdirSync(sessionDir, { recursive: true });
+  writeFileSync(cookiesPath, JSON.stringify([{ name: "session", domain: ".doordash.com" }]));
+  writeFileSync(storageStatePath, JSON.stringify({ cookies: [], origins: [] }));
+
+  try {
+    const result = runCli(["logout"], { HOME: tempHome });
+    assert.equal(result.status, 0);
+    assert.equal(existsSync(cookiesPath), false);
+    assert.equal(existsSync(storageStatePath), false);
+    assert.equal(existsSync(browserImportBlockPath), true);
+
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.cookiesPath, cookiesPath);
+    assert.equal(parsed.storageStatePath, storageStatePath);
+    assert.match(parsed.message, /disabled until the next `dd-cli login`/);
+  } finally {
+    await rm(tempHome, { recursive: true, force: true });
+  }
 });
 
 test("blocked commands fail immediately", () => {

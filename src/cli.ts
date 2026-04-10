@@ -44,15 +44,14 @@ export function usage(): string {
     "  - Run with no arguments to show this help.",
     "  - Common Unicode long dashes are normalized for flags, so —help / –help work too.",
     "  - Installed command names are lowercase only: dd-cli and doordash-cli.",
-    "  - install-browser downloads the matching Playwright Chromium build used by this package.",
+    "  - install-browser downloads the bundled Playwright Chromium runtime used when the CLI needs a local browser.",
     "  - Manual pages ship with the project: man dd-cli or man doordash-cli.",
-    "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, orders, order, cart, add-to-cart, and update-cart.",
-    "  - login launches Chromium for a one-time manual sign-in flow and saves reusable state for later direct API calls.",
-    "  - auth-check can quietly reuse an already-signed-in compatible managed-browser DoorDash session when one is available; use login for explicit browser interaction.",
-    "  - set-address now uses DoorDash autocomplete/get-or-create plus addConsumerAddressV2 for brand-new address enrollment when needed.",
+    "  - login reuses saved local auth when possible, otherwise imports a signed-in browser session or opens a temporary Chromium login window.",
+    "  - login exits non-zero if authentication is still not established.",
+    "  - auth-check reports saved-session status and can quietly reuse/import a signed-in browser session unless logout disabled that auto-reuse.",
+    "  - logout clears saved session files and keeps automatic browser-session reuse off until the next login.",
     "  - configurable items require explicit --options-json selections.",
-    '  - standalone recommended add-ons that open a nested cursor step are supported via children, e.g. [{"groupId":"recommended_option_546935995","optionId":"546936011","children":[{"groupId":"780057412","optionId":"4702669757"}]}].',
-    "  - other non-recommended nested cursor trees still fail closed until DoorDash exposes a directly provable transport.",
+    "  - unsupported option trees fail closed.",
     "",
     "Out-of-scope commands remain intentionally unsupported:",
     "  checkout, place-order, payment actions, order mutation/cancellation",
@@ -146,6 +145,17 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
   return { command, flags };
 }
 
+export function commandExitCode(command: string, result: unknown): number {
+  if (command === "login" && typeof result === "object" && result !== null) {
+    const authResult = result as { success?: unknown; isLoggedIn?: unknown };
+    if (authResult.success === false || authResult.isLoggedIn === false) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const { command, flags } = parseArgv(argv);
 
@@ -166,7 +176,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   try {
     const result = await lib.runCommand(safeCommand, flags);
     console.log(JSON.stringify(result, null, 2));
-    process.exitCode = 0;
+    process.exitCode = commandExitCode(safeCommand, result);
   } finally {
     await lib.shutdown();
   }
