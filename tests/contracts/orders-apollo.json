@@ -1,0 +1,62 @@
+[
+  {
+    "id": "row-1",
+    "orderUuid": "order-uuid-1",
+    "deliveryUuid": "delivery-uuid-1",
+    "createdAt": "2026-03-04T12:00:00Z",
+    "submittedAt": "2026-03-04T12:01:00Z",
+    "cancelledAt": null,
+    "fulfilledAt": null,
+    "lifecycleStatus": "in-progress",
+    "isActive": true,
+    "hasLiveTracking": true,
+    "pollingIntervalSeconds": 20,
+    "specialInstructions": null,
+    "isReorderable": false,
+    "isGift": false,
+    "isPickup": false,
+    "isRetail": false,
+    "isMerchantShipping": false,
+    "containsAlcohol": false,
+    "fulfillmentType": "DELIVERY",
+    "shoppingProtocol": "STANDARD",
+    "orderFilterType": "ACTIVE",
+    "creator": null,
+    "deliveryAddress": null,
+    "store": {
+      "id": "store-1",
+      "name": "Burger Spot",
+      "businessName": "Burger Spot",
+      "phoneNumber": null,
+      "fulfillsOwnDeliveries": null,
+      "customerArrivedPickupInstructions": null,
+      "rerouteStoreId": null
+    },
+    "grandTotal": {
+      "unitAmount": 1999,
+      "currency": "USD",
+      "decimalPlaces": 2,
+      "displayString": "$19.99",
+      "sign": null
+    },
+    "itemCount": 1,
+    "items": [
+      {
+        "id": "line-1",
+        "name": "Burger",
+        "quantity": 1,
+        "specialInstructions": null,
+        "substitutionPreferences": null,
+        "originalItemPrice": null,
+        "purchaseType": null,
+        "purchaseQuantity": null,
+        "fulfillQuantity": null,
+        "extras": []
+      }
+    ],
+    "likelyOutOfStockItems": [],
+    "recurringOrderDetails": null,
+    "bundleOrderInfo": null,
+    "cancellationPendingRefundState": null
+  }
+]

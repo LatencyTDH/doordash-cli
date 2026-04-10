@@ -1,0 +1,78 @@
+[
+  {
+    "body": [
+      {
+        "id": "row.store:24633898:0",
+        "text": {
+          "title": "Poke Bowl",
+          "description": "$$ \u2022 Hawaiian, Seafood Restaurant",
+          "custom": [
+            {
+              "key": "delivery_fee_string",
+              "value": "$0 delivery fee over $7"
+            },
+            {
+              "key": "eta_display_string",
+              "value": "1.0 mi \u2022 32 min"
+            },
+            {
+              "key": "is_retail",
+              "value": "false"
+            }
+          ]
+        },
+        "images": {
+          "main": {
+            "uri": "https://img.cdn4dd.com/example.jpeg"
+          }
+        },
+        "events": {
+          "click": {
+            "name": "navigate",
+            "data": "{\"domain\":\"https://www.doordash.com/\",\"uri\":\"store/24633898/?pickup=false\"}"
+          }
+        },
+        "component": {
+          "id": "row.store",
+          "category": "row"
+        }
+      },
+      {
+        "id": "row.store:99887766:0",
+        "text": {
+          "title": "Neighborhood Mart",
+          "description": "$ \u2022 Convenience, Retail",
+          "custom": [
+            {
+              "key": "delivery_fee_string",
+              "value": "$1.99 delivery fee"
+            },
+            {
+              "key": "eta_display_string",
+              "value": "18 min"
+            },
+            {
+              "key": "is_retail",
+              "value": "true"
+            }
+          ]
+        },
+        "images": {
+          "main": {
+            "uri": "https://img.cdn4dd.com/mart.jpeg"
+          }
+        },
+        "events": {
+          "click": {
+            "name": "navigate",
+            "data": "{\"domain\":\"https://www.doordash.com/\",\"uri\":\"store/99887766/?pickup=false\"}"
+          }
+        },
+        "component": {
+          "id": "row.store",
+          "category": "row"
+        }
+      }
+    ]
+  }
+]

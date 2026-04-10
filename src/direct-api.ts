@@ -1653,7 +1653,7 @@ type BootstrapAuthSessionDeps = {
 
 const session = new DoorDashDirectSession();
 
-function buildAuthResult(consumer: ConsumerGraph | null): AuthResult {
+export function buildAuthResult(consumer: ConsumerGraph | null): AuthResult {
   return {
     success: true,
     isLoggedIn: Boolean(consumer && consumer.isGuest === false),
@@ -3544,7 +3544,7 @@ export function parseSearchRestaurantRow(entry: unknown): SearchRestaurantResult
   };
 }
 
-function parseMenuResponse(storepageFeed: unknown, requestedRestaurantId: string): MenuResult {
+export function parseMenuResponse(storepageFeed: unknown, requestedRestaurantId: string): MenuResult {
   const root = asObject(storepageFeed);
   const storeHeader = asObject(root.storeHeader);
   const menuBook = asObject(root.menuBook);
@@ -3588,7 +3588,7 @@ function parseMenuResponse(storepageFeed: unknown, requestedRestaurantId: string
   };
 }
 
-function parseItemResponse(itemPage: unknown, restaurantId: string): ItemResult {
+export function parseItemResponse(itemPage: unknown, restaurantId: string): ItemResult {
   const root = asObject(itemPage);
   const itemHeader = asObject(root.itemHeader);
   const optionLists = Array.isArray(root.optionLists) ? root.optionLists : [];
@@ -3637,7 +3637,7 @@ function parseItemResponse(itemPage: unknown, restaurantId: string): ItemResult 
   };
 }
 
-function parseCartResponse(cartRoot: unknown | null): CartResult {
+export function parseCartResponse(cartRoot: unknown | null): CartResult {
   const cart = cartRoot ? asObject(cartRoot) : {};
   const orders = Array.isArray(cart.orders) ? cart.orders : [];
   const items = orders.flatMap((order) => {

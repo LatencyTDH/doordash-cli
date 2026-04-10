@@ -28,6 +28,7 @@ import {
   type SetAddressResult,
   type UpdateCartResult,
 } from "./direct-api.js";
+import { CliError } from "./automation-contract.js";
 
 const require = createRequire(import.meta.url);
 const PLAYWRIGHT_CLI_PATH = join(dirname(require.resolve("playwright/package.json")), "cli.js");
@@ -65,6 +66,8 @@ const LEGACY_COMMAND_RENAMES = {
   "auth-bootstrap": "login",
   "auth-clear": "logout",
 } as const;
+
+const META_FLAGS = new Set(["help", "version", "json"]);
 
 const COMMAND_FLAGS = {
   "install-browser": [],
@@ -112,29 +115,48 @@ export function assertSafeCommand(value: string): asserts value is SafeCommand {
 
   if (isBlockedCommand(value)) {
     const guidance = value === "track-order" ? " Use `orders` or `order --order-id ...` for read-only existing-order status instead." : "";
-    throw new Error(
+    throw CliError.blocked(
       `Blocked command: ${value}. This CLI is read-only for browse, cart, and existing-order inspection only; checkout, order placement, and payment actions stay out of scope.${guidance}`,
+      {
+        command: value,
+        allowedCommands: [...SAFE_COMMANDS],
+      },
     );
   }
 
   const renamedTo = LEGACY_COMMAND_RENAMES[value as keyof typeof LEGACY_COMMAND_RENAMES];
   if (renamedTo) {
-    throw new Error(`Unsupported command: ${value}. This CLI renamed it to ${renamedTo}.`);
+    throw CliError.unsupported("unsupported_command", `Unsupported command: ${value}. This CLI renamed it to ${renamedTo}.`, {
+      command: value,
+      renamedTo,
+      allowedCommands: [...SAFE_COMMANDS],
+    });
   }
 
-  throw new Error(`Unsupported command: ${value}. Allowed commands: ${SAFE_COMMANDS.join(", ")}`);
+  throw CliError.unsupported("unsupported_command", `Unsupported command: ${value}. Allowed commands: ${SAFE_COMMANDS.join(", ")}`, {
+    command: value,
+    allowedCommands: [...SAFE_COMMANDS],
+  });
 }
 
 export function assertAllowedFlags(command: SafeCommand, args: CommandFlags): void {
   const allowedFlags = new Set<string>(COMMAND_FLAGS[command]);
-  const unknownFlags = Object.keys(args).filter((key) => key !== "help" && !allowedFlags.has(key));
+  const unknownFlags = Object.keys(args).filter((key) => !META_FLAGS.has(key) && !allowedFlags.has(key));
 
   if (unknownFlags.length === 0) {
     return;
   }
 
   const allowedText = COMMAND_FLAGS[command].length > 0 ? COMMAND_FLAGS[command].join(", ") : "(none)";
-  throw new Error(`Unsupported flag(s) for ${command}: ${unknownFlags.join(", ")}. Allowed flags: ${allowedText}`);
+  throw CliError.usage(
+    "unsupported_flag",
+    `Unsupported flag(s) for ${command}: ${unknownFlags.join(", ")}. Allowed flags: ${allowedText}`,
+    {
+      command,
+      unsupportedFlags: unknownFlags,
+      allowedFlags: [...COMMAND_FLAGS[command]],
+    },
+  );
 }
 
 export async function runCommand(command: SafeCommand, args: CommandFlags): Promise<CommandResult> {
@@ -179,7 +201,11 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
       const limitRaw = optionalArg(args, "limit");
       const limit = limitRaw === undefined ? undefined : Number.parseInt(limitRaw, 10);
       if (limitRaw !== undefined && (!Number.isInteger(limit) || (limit ?? 0) < 1)) {
-        throw new Error(`Invalid --limit: ${limitRaw}`);
+        throw CliError.usage("usage_error", `Invalid --limit: ${limitRaw}`, {
+          command,
+          flag: "limit",
+          received: limitRaw,
+        });
       }
 
       return getOrdersDirect({
@@ -203,11 +229,30 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
       const quantity = quantityRaw === undefined ? 1 : Number.parseInt(quantityRaw, 10);
 
       if (!itemId && !itemName) {
-        throw new Error("Missing required flag --item-id or --item-name");
+        throw CliError.usage("usage_error", "Missing required flag --item-id or --item-name", {
+          command,
+          requiredFlags: ["item-id", "item-name"],
+        });
       }
 
       if (!Number.isInteger(quantity) || quantity < 1) {
-        throw new Error(`Invalid --quantity: ${quantityRaw}`);
+        throw CliError.usage("usage_error", `Invalid --quantity: ${quantityRaw}`, {
+          command,
+          flag: "quantity",
+          received: quantityRaw,
+        });
+      }
+
+      let optionSelections: import("./direct-api.js").RequestedOptionSelection[] = [];
+      if (optionsJson) {
+        try {
+          optionSelections = parseOptionSelectionsJson(optionsJson);
+        } catch (error) {
+          throw CliError.usage("invalid_options_json", error instanceof Error ? error.message : String(error), {
+            command,
+            flag: "options-json",
+          }, error);
+        }
       }
 
       return addToCartDirect({
@@ -216,7 +261,7 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
         itemName,
         quantity,
         specialInstructions,
-        optionSelections: optionsJson ? parseOptionSelectionsJson(optionsJson) : [],
+        optionSelections,
       });
     }
 
@@ -226,7 +271,11 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
       const quantity = Number.parseInt(quantityRaw, 10);
 
       if (!Number.isInteger(quantity) || quantity < 0) {
-        throw new Error(`Invalid --quantity: ${quantityRaw}`);
+        throw CliError.usage("usage_error", `Invalid --quantity: ${quantityRaw}`, {
+          command,
+          flag: "quantity",
+          received: quantityRaw,
+        });
       }
 
       return updateCartDirect({
@@ -271,7 +320,9 @@ async function installBrowser(): Promise<{ success: true; message: string; brows
 function requiredArg(args: CommandFlags, key: string): string {
   const value = args[key];
   if (!value) {
-    throw new Error(`Missing required flag --${key}`);
+    throw CliError.usage("usage_error", `Missing required flag --${key}`, {
+      flag: key,
+    });
   }
   return value;
 }
@@ -295,5 +346,8 @@ function parseBooleanFlag(value: string | undefined, key: string): boolean | und
     return false;
   }
 
-  throw new Error(`Invalid --${key}: ${value}. Expected true or false.`);
+  throw CliError.usage("usage_error", `Invalid --${key}: ${value}. Expected true or false.`, {
+    flag: key,
+    received: value,
+  });
 }

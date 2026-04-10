@@ -1,0 +1,65 @@
+{
+  "storeHeader": {
+    "id": "1721744",
+    "name": "Sushi Katsuei",
+    "description": "Omakase-quality sushi rolls and sashimi.",
+    "business": {
+      "name": "Sushi Katsuei Brooklyn"
+    },
+    "address": {
+      "displayAddress": "151 7th Ave, Brooklyn, NY 11215"
+    },
+    "ratings": {
+      "averageRating": 4.8,
+      "numRatingsDisplayString": "5k+"
+    },
+    "coverImgUrl": "https://img.cdn4dd.com/store-cover.jpeg"
+  },
+  "menuBook": {
+    "id": "2181443",
+    "name": "Dinner"
+  },
+  "itemLists": [
+    {
+      "id": "cat-rolls",
+      "name": "Signature Rolls",
+      "description": "Fresh-cut specialty rolls",
+      "items": [
+        {
+          "id": "546936015",
+          "name": "Two roll selection",
+          "description": "Choose two signature rolls.",
+          "displayPrice": "$18.98",
+          "imageUrl": "https://img.cdn4dd.com/two-roll.jpeg",
+          "nextCursor": null,
+          "storeId": "1721744"
+        },
+        {
+          "id": "876658890",
+          "name": "Sushi premium",
+          "description": "10pc sushi & NegiToro roll.",
+          "displayPrice": "$49.00",
+          "imageUrl": null,
+          "nextCursor": null,
+          "storeId": "1721744"
+        }
+      ]
+    },
+    {
+      "id": "cat-sides",
+      "name": "Sides",
+      "description": null,
+      "items": [
+        {
+          "id": "side-1",
+          "name": "Miso Soup",
+          "description": "Classic soup with tofu.",
+          "displayPrice": "$3.00",
+          "imageUrl": null,
+          "nextCursor": null,
+          "storeId": "1721744"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "success": true,
+  "restaurantId": "1721744",
+  "item": {
+    "id": "546936015",
+    "name": "Two roll selection",
+    "description": "Spicy tuna, salmon avo, eel cuc, yellowtail scallion, California Roll.",
+    "displayPrice": "+$18.98",
+    "unitAmount": 1898,
+    "currency": "USD",
+    "decimalPlaces": 2,
+    "menuId": "2181443",
+    "specialInstructionsMaxLength": 500,
+    "dietaryTags": [
+      {
+        "type": "FISH",
+        "abbreviatedTagDisplayString": "Fish",
+        "fullTagDisplayString": "Contains fish"
+      }
+    ],
+    "reviewData": {
+      "ratingDisplayString": "95%",
+      "reviewCount": "120+",
+      "itemReviewRankingCount": 4
+    },
+    "requiredOptionLists": [
+      {
+        "id": "703393388",
+        "name": "1st Roll Choice",
+        "subtitle": "Select 1",
+        "minNumOptions": 1,
+        "maxNumOptions": 1,
+        "numFreeOptions": 0,
+        "isOptional": false,
+        "options": [
+          {
+            "id": "4716032529",
+            "name": "California Roll",
+            "displayPrice": null,
+            "unitAmount": 0,
+            "defaultQuantity": 0,
+            "nextCursor": null
+          }
+        ]
+      },
+      {
+        "id": "703393389",
+        "name": "2nd Roll Choice",
+        "subtitle": "Select 1",
+        "minNumOptions": 1,
+        "maxNumOptions": 1,
+        "numFreeOptions": 0,
+        "isOptional": false,
+        "options": [
+          {
+            "id": "4716042466",
+            "name": "California Roll",
+            "displayPrice": null,
+            "unitAmount": 0,
+            "defaultQuantity": 0,
+            "nextCursor": null
+          }
+        ]
+      }
+    ],
+    "optionLists": [
+      {
+        "id": "703393388",
+        "name": "1st Roll Choice",
+        "subtitle": "Select 1",
+        "minNumOptions": 1,
+        "maxNumOptions": 1,
+        "numFreeOptions": 0,
+        "isOptional": false,
+        "options": [
+          {
+            "id": "4716032529",
+            "name": "California Roll",
+            "displayPrice": null,
+            "unitAmount": 0,
+            "defaultQuantity": 0,
+            "nextCursor": null
+          }
+        ]
+      },
+      {
+        "id": "703393389",
+        "name": "2nd Roll Choice",
+        "subtitle": "Select 1",
+        "minNumOptions": 1,
+        "maxNumOptions": 1,
+        "numFreeOptions": 0,
+        "isOptional": false,
+        "options": [
+          {
+            "id": "4716042466",
+            "name": "California Roll",
+            "displayPrice": null,
+            "unitAmount": 0,
+            "defaultQuantity": 0,
+            "nextCursor": null
+          }
+        ]
+      }
+    ],
+    "preferences": []
+  }
+}

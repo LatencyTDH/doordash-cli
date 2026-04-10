@@ -2,7 +2,7 @@
 
 > Cart-safe DoorDash CLI for terminal workflows.
 
-`doordash-cli` is an unofficial CLI for the parts of DoorDash that work well in a shell: sign in once, set a delivery address, search restaurants, inspect menus and items, read existing orders, and manage a cart with JSON output.
+`doordash-cli` is an unofficial CLI for the parts of DoorDash that work well in a shell: sign in once, set a delivery address, search restaurants, inspect menus and items, read existing orders, and manage a cart with structured output.
 
 It stops before checkout.
 
@@ -11,7 +11,7 @@ It stops before checkout.
 - **Cart-safe by design** — browse, inspect existing orders, and manage a cart; no checkout, payment, or order mutation.
 - **Browser-first login** — `dd-cli login` reuses saved local auth, then same-machine Linux Brave/Chrome profile state, then attachable signed-in browser sessions when possible, and otherwise opens a temporary login window.
 - **Direct API first** — auth, discovery, existing-order, and cart commands use DoorDash consumer-web GraphQL/HTTP rather than DOM clicking.
-- **JSON-friendly** — every command prints structured output.
+- **JSON-friendly** — commands print structured output by default, and `--json` enables a documented automation envelope with stable error codes and exit codes.
 - **Fail-closed** — unsupported commands, flags, or unsafe payload shapes are rejected.
 
 ## Install
@@ -107,6 +107,8 @@ If `login` opens a temporary Chromium window, the CLI now keeps checking automat
 
 For configurable items and working command examples, see [docs/examples.md](docs/examples.md).
 
+For stable scripting and wrapper integrations, use `--json` and read [docs/automation-contract.md](docs/automation-contract.md).
+
 ## Safety
 
 The CLI allowlists browse, existing-order, and cart commands. It hard-blocks:
@@ -127,6 +129,7 @@ Safety is enforced in code:
 
 - [Install guide](docs/install.md)
 - [Examples](docs/examples.md)
+- [Automation contract](docs/automation-contract.md)
 - [Release process](docs/releasing.md)
 - [Architecture and scope guide](docs/architecture.md)
 - [Contributing](CONTRIBUTING.md)

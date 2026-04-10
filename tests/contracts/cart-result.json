@@ -1,0 +1,43 @@
+{
+  "success": true,
+  "cartId": "cart-123",
+  "subtotal": 1898,
+  "total": 2234,
+  "currencyCode": "USD",
+  "restaurant": {
+    "id": "1721744",
+    "name": "Sushi Katsuei",
+    "slug": "sushi-katsuei",
+    "businessName": "Sushi Katsuei Brooklyn"
+  },
+  "menu": {
+    "id": "2181443",
+    "name": "Dinner"
+  },
+  "itemCount": 1,
+  "items": [
+    {
+      "cartItemId": "cart-item-1",
+      "itemId": "546936015",
+      "name": "Two roll selection",
+      "quantity": 1,
+      "specialInstructions": "No wasabi",
+      "priceDisplayString": "$18.98",
+      "singlePrice": 1898,
+      "totalPrice": 1898,
+      "status": "AVAILABLE",
+      "options": [
+        {
+          "id": "4716032529",
+          "name": "California Roll",
+          "quantity": 1
+        },
+        {
+          "id": "4716042466",
+          "name": "California Roll",
+          "quantity": 1
+        }
+      ]
+    }
+  ]
+}

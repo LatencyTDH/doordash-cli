@@ -1,0 +1,32 @@
+{
+  "input": "11 Wall St, New York, NY 10005",
+  "availableAddresses": [
+    {
+      "id": "default-address-1",
+      "addressId": "geo-11-wall",
+      "printableAddress": "11 Wall St, New York, NY 10005, USA",
+      "shortname": "11 Wall St"
+    }
+  ],
+  "prediction": {
+    "geo_address_id": "geo-11-wall",
+    "source_place_id": "ChIJ8fw4t0hawokRk1YdVjndM9w",
+    "formatted_address": "11 Wall St, New York, NY 10005, USA",
+    "formatted_address_short": "11 Wall St",
+    "locality": "New York",
+    "administrative_area_level1": "NY",
+    "postal_code": "10005",
+    "lat": 40.707757,
+    "lng": -74.010045
+  },
+  "createdAddress": {
+    "id": "geo-11-wall",
+    "formatted_address": "11 Wall St, New York, NY 10005, USA",
+    "formatted_address_short": "11 Wall St",
+    "locality": "New York",
+    "administrative_area_level1": "NY",
+    "postal_code": "10005",
+    "lat": 40.707757,
+    "lng": -74.010045
+  }
+}

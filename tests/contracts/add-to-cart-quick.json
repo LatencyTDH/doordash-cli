@@ -1,0 +1,31 @@
+{
+  "addCartItemInput": {
+    "storeId": "1721744",
+    "menuId": "2181443",
+    "itemId": "876658890",
+    "itemName": " Sushi premium",
+    "itemDescription": "10pc sushi & NegiToro roll.",
+    "currency": "USD",
+    "quantity": 2,
+    "nestedOptions": "[]",
+    "specialInstructions": "extra napkins",
+    "substitutionPreference": "substitute",
+    "isBundle": false,
+    "bundleType": "BUNDLE_TYPE_UNSPECIFIED",
+    "unitPrice": 4900,
+    "cartId": "90a554a1-cc69-462b-8860-911ddf2d7f88"
+  },
+  "lowPriorityBatchAddCartItemInput": [],
+  "fulfillmentContext": {
+    "shouldUpdateFulfillment": false,
+    "fulfillmentType": "Delivery"
+  },
+  "monitoringContext": {
+    "isGroup": false
+  },
+  "cartContext": {
+    "isBundle": false
+  },
+  "returnCartFromOrderService": false,
+  "shouldKeepOnlyOneActiveCart": false
+}
