@@ -43,6 +43,7 @@ async function runLinkedCli(linkName: string, args: string[]) {
 test("safe command allowlist stays cart-safe while adding install helpers", () => {
   assert.deepEqual(SAFE_COMMANDS, [
     "install-browser",
+    "doctor",
     "auth-check",
     "login",
     "logout",

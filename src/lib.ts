@@ -1,3 +1,4 @@
+import { runDoctor, type DoctorResult } from "./doctor.js";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -35,6 +36,7 @@ const PLAYWRIGHT_CLI_PATH = join(dirname(require.resolve("playwright/package.jso
 
 export const SAFE_COMMANDS = [
   "install-browser",
+  "doctor",
   "auth-check",
   "login",
   "logout",
@@ -71,6 +73,7 @@ const META_FLAGS = new Set(["help", "version", "json"]);
 
 const COMMAND_FLAGS = {
   "install-browser": [],
+  "doctor": ["json"],
   "auth-check": [],
   login: [],
   logout: [],
@@ -87,6 +90,7 @@ const COMMAND_FLAGS = {
 
 export type CommandResult =
   | { success: true; message: string; browser: "chromium" }
+  | DoctorResult
   | AuthResult
   | AuthBootstrapResult
   | { success: true; message: string; cookiesPath: string; storageStatePath: string }
@@ -165,6 +169,9 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
   switch (command) {
     case "install-browser":
       return installBrowser();
+
+    case "doctor":
+      return runDoctor();
 
     case "auth-check":
       return checkAuthDirect();

@@ -38,6 +38,7 @@ export function usage(): string {
     "",
     "Safe commands:",
     "  install-browser",
+    "  doctor [--json]",
     "  auth-check",
     "  login",
     "  logout",
@@ -57,6 +58,7 @@ export function usage(): string {
     "  - Common Unicode long dashes are normalized for flags, so —help / –help work too.",
     "  - Installed command names are lowercase only: dd-cli and doordash-cli.",
     "  - install-browser downloads the bundled Playwright Chromium runtime used when the CLI needs a local browser.",
+    "  - doctor is read-only, safe to paste, and defaults to actionable human output; add --json for automation or issue reports.",
     "  - Manual pages ship with the project: man dd-cli or man doordash-cli.",
     "  - login reuses saved local auth when possible, otherwise first tries same-machine Linux Brave/Chrome profile import, then attachable signed-in browser sessions, then a temporary Chromium login window.",
     "  - login auto-detects completion when it can; in the temporary-browser fallback you can also press Enter to force an immediate recheck once the page shows you are signed in.",
@@ -73,12 +75,14 @@ export function usage(): string {
     "  dd-cli --help",
     "  dd-cli --json auth-check",
     "  dd-cli install-browser",
+    "  dd-cli doctor",
     "  dd-cli search --query sushi",
     "  dd-cli orders --active-only",
     "  doordash-cli order --order-id 3f4c6d0e-1234-5678-90ab-cdef12345678",
     "  doordash-cli login",
+    "  doordash-cli doctor --json",
     "",
-    "Allowed commands: install-browser, auth-check, login, logout, set-address, search, menu, item, orders, order, add-to-cart, update-cart, cart",
+    "Allowed commands: install-browser, doctor, auth-check, login, logout, set-address, search, menu, item, orders, order, add-to-cart, update-cart, cart",
   ].join("\n");
 }
 
@@ -229,6 +233,27 @@ export function loginFailureAsCliError(result: unknown): CliError | null {
   );
 }
 
+export function isTruthyFlag(value: string | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+
+  return ["true", "1", "yes", "on"].includes(value.toLowerCase());
+}
+
+export async function renderCommandOutput(
+  command: string,
+  flags: Record<string, string>,
+  result: unknown,
+): Promise<string> {
+  if (command === "doctor" && !isTruthyFlag(flags.json)) {
+    const { formatDoctorReport } = await import("./doctor.js");
+    return formatDoctorReport(result as import("./doctor.js").DoctorResult);
+  }
+
+  return JSON.stringify(result, null, 2);
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const { command, flags } = parseArgv(argv);
   const jsonMode = parseJsonFlag(flags.json);
@@ -273,7 +298,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     if (jsonMode) {
       console.log(JSON.stringify(buildAutomationSuccessEnvelope({ command: safeCommand, version: version(), data: result }), null, 2));
     } else {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(await renderCommandOutput(safeCommand, flags, result));
     }
     process.exitCode = commandExitCode(safeCommand, result);
   } finally {
