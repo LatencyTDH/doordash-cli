@@ -279,6 +279,13 @@ test("login failure can be represented as a structured auth error", () => {
 
 test("logout clears persisted session artifacts in the active home directory", async () => {
   const tempHome = await mkdtemp(join(tmpdir(), "doordash-cli-home-"));
+  const env = {
+    HOME: tempHome,
+    XDG_STATE_HOME: "",
+    XDG_CONFIG_HOME: "",
+    DOORDASH_CLI_SESSION_DIR: "",
+    DOORDASH_CLI_CONFIG_DIR: "",
+  } as NodeJS.ProcessEnv;
   const sessionDir = join(tempHome, ".local", "state", "doordash-cli");
   const cookiesPath = join(sessionDir, "cookies.json");
   const storageStatePath = join(sessionDir, "storage-state.json");
@@ -288,7 +295,7 @@ test("logout clears persisted session artifacts in the active home directory", a
   writeFileSync(storageStatePath, JSON.stringify({ cookies: [], origins: [] }));
 
   try {
-    const result = runCli(["logout"], { HOME: tempHome });
+    const result = runCli(["logout"], env);
     assert.equal(result.status, 0);
     assert.equal(existsSync(cookiesPath), false);
     assert.equal(existsSync(storageStatePath), false);
