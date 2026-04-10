@@ -9,6 +9,12 @@ All notable changes to `doordash-cli` will be documented in this file.
 
 See [docs/releasing.md](docs/releasing.md) for the maintainer release flow.
 
+## [0.4.2](https://github.com/LatencyTDH/doordash-cli/compare/v0.4.1...v0.4.2) (2026-04-10)
+
+### Bug Fixes
+
+* import signed-in linux browser profile state for login reuse ([#40](https://github.com/LatencyTDH/doordash-cli/issues/40)) ([97feddc](https://github.com/LatencyTDH/doordash-cli/commit/97feddc68ce0ebc882737dfad69d5e908f20d250))
+
 ## [0.4.1](https://github.com/LatencyTDH/doordash-cli/compare/v0.4.0...v0.4.1) (2026-04-10)
 
 ### Bug Fixes
