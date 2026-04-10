@@ -60,14 +60,14 @@ doordash-cli search --query sushi
 
 ## Login and session reuse
 
-`doordash-cli login` reuses saved local auth when it is still valid. Otherwise it tries to import a discoverable signed-in browser session. If neither is available, it opens a temporary Chromium login window and saves the session there. If authentication still is not established, `login` exits non-zero.
+`doordash-cli login` reuses saved local auth when it is still valid. Otherwise it tries to import a discoverable attachable signed-in browser session. A merely-open Chrome/Brave window is not automatically reusable unless the CLI can actually attach to it. If no attachable session is available, it opens a temporary Chromium login window and saves the session there. If authentication still is not established, `login` exits non-zero.
 
-`doordash-cli auth-check` can also quietly import a discoverable signed-in browser session unless `doordash-cli logout` disabled that auto-reuse.
+`doordash-cli auth-check` can also quietly import a discoverable attachable signed-in browser session unless `doordash-cli logout` disabled that auto-reuse.
 
-`doordash-cli logout` clears persisted cookies and stored browser state, then keeps automatic browser-session reuse disabled until you explicitly run `doordash-cli login` again.
+`doordash-cli logout` clears persisted cookies and stored browser state, then keeps passive browser-session reuse disabled until your next explicit `doordash-cli login` attempt.
 
 ## Browser-session troubleshooting
 
-Normally you should not need to think about browser plumbing. If `doordash-cli login` opens a temporary Chromium window, finish signing in there and let the CLI save the session.
+Normally you should not need to think about browser plumbing. If `doordash-cli login` opens a temporary Chromium window, finish signing in there and let the CLI save the session. The CLI keeps checking automatically, and if the page already shows you are signed in but the command has not finished yet, press Enter in the terminal to force an immediate recheck.
 
-If you expected reuse from another browser instead, make sure that browser exposes a compatible CDP endpoint, then rerun `doordash-cli login`.
+If you expected reuse from another browser instead, make sure that browser exposes an attachable browser automation session the CLI can actually import. A merely-open browser window is not enough today, even if it is already your main browser.

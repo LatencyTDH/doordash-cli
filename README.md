@@ -9,7 +9,7 @@ It stops before checkout.
 ## Highlights
 
 - **Cart-safe by design** — browse, inspect existing orders, and manage a cart; no checkout, payment, or order mutation.
-- **Browser-first login** — `dd-cli login` reuses saved local auth or a discoverable signed-in browser session when possible, and otherwise opens a temporary login window.
+- **Browser-first login** — `dd-cli login` reuses saved local auth or an attachable signed-in browser session when possible, and otherwise opens a temporary login window.
 - **Direct API first** — auth, discovery, existing-order, and cart commands use DoorDash consumer-web GraphQL/HTTP rather than DOM clicking.
 - **JSON-friendly** — every command prints structured output.
 - **Fail-closed** — unsupported commands, flags, or unsafe payload shapes are rejected.
@@ -70,13 +70,13 @@ If you are running from a checkout without `npm link`, replace `doordash-cli` wi
 
 ## Login and session reuse
 
-`login` reuses saved local auth when it is still valid. Otherwise it tries to import a discoverable signed-in browser session. If neither is available, it opens a temporary Chromium login window and saves the session there. If authentication still is not established, `login` exits non-zero.
+`login` reuses saved local auth when it is still valid. Otherwise it tries to import a discoverable attachable signed-in browser session. A merely-open Chrome/Brave window is not automatically reusable unless the CLI can actually attach to it. If no attachable session is available, it opens a temporary Chromium login window and saves the session there. If authentication still is not established, `login` exits non-zero.
 
-`auth-check` reports whether the saved state appears logged in and can quietly import a discoverable signed-in browser session unless `logout` disabled that auto-reuse.
+`auth-check` reports whether the saved state appears logged in and can quietly import a discoverable attachable signed-in browser session unless `logout` disabled that auto-reuse.
 
-`logout` clears persisted cookies and stored browser state, then keeps automatic browser-session reuse disabled until you explicitly run `dd-cli login` again.
+`logout` clears persisted cookies and stored browser state, then keeps passive browser-session reuse disabled until your next explicit `dd-cli login` attempt.
 
-If `login` opens a temporary Chromium window, finish signing in there and let the CLI save the session. If you expect reuse from another browser, make sure it exposes a compatible CDP endpoint, then rerun `dd-cli login`.
+If `login` opens a temporary Chromium window, the CLI now keeps checking automatically and also tells you that you can press Enter to force an immediate recheck once the page already shows you are signed in. That restores the old effective manual-completion path without giving up automatic completion when it works. If you expect reuse from another browser instead, make sure it exposes an attachable browser automation session the CLI can actually import; a merely-open browser window is not enough today, even if it is already your main browser.
 
 ## Command surface
 

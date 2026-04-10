@@ -126,10 +126,11 @@ test("help output shows the direct read-only/cart-safe command surface", () => {
   assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /--version, -v/);
   assert.match(result.stdout, /man dd-cli/);
-  assert.match(result.stdout, /login reuses saved local auth when possible, otherwise imports a signed-in browser session or opens a temporary Chromium login window\./);
+  assert.match(result.stdout, /login reuses saved local auth when possible, otherwise imports an attachable signed-in browser session or opens a temporary Chromium login window\./);
+  assert.match(result.stdout, /login auto-detects completion when it can; in the temporary-browser fallback you can also press Enter to force an immediate recheck once the page shows you are signed in\./);
   assert.match(result.stdout, /login exits non-zero if authentication is still not established\./);
-  assert.match(result.stdout, /auth-check reports saved-session status and can quietly reuse\/import a signed-in browser session unless logout disabled that auto-reuse\./);
-  assert.match(result.stdout, /logout clears saved session files and keeps automatic browser-session reuse off until the next login\./);
+  assert.match(result.stdout, /auth-check reports saved-session status and can quietly reuse\/import an attachable signed-in browser session unless logout disabled that auto-reuse\./);
+  assert.match(result.stdout, /logout clears saved session files and keeps passive browser-session reuse off until the next explicit login attempt\./);
   assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
   assert.doesNotMatch(result.stdout, /auth-bootstrap/);
   assert.doesNotMatch(result.stdout, /auth-clear/);
@@ -145,7 +146,8 @@ test("repository ships man pages for the supported lowercase command names", () 
   assert.match(readFileSync(ddManPath, "utf8"), /\.B login/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-bootstrap/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-clear/);
-  assert.match(readFileSync(ddManPath, "utf8"), /automatic\s+browser-session reuse stays disabled until the next explicit/i);
+  assert.match(readFileSync(ddManPath, "utf8"), /passive\s+browser-session reuse stays disabled until the next explicit/i);
+  assert.match(readFileSync(ddManPath, "utf8"), /merely-open Chrome\/Brave window is not\s+automatically reusable/i);
   assert.match(readFileSync(ddManPath, "utf8"), /temporary Chromium.*window/i);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /Dd-cli/);
   assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
