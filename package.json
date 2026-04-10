@@ -16,6 +16,7 @@
     "dist",
     "man",
     "docs/install.md",
+    "docs/auth-and-session-reuse.md",
     "docs/examples.md",
     "docs/automation-contract.md",
     "scripts/install-manpage.sh",

@@ -74,6 +74,7 @@ User and maintainer docs live here.
 Current notable docs:
 
 - `docs/install.md` – install + first-run detail
+- `docs/auth-and-session-reuse.md` – auth fallback order, session reuse, and storage details
 - `docs/examples.md` – examples and command usage
 - `docs/releasing.md` – maintainer release flow
 - `docs/architecture.md` – this contributor map
