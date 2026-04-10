@@ -1,12 +1,14 @@
+import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import { chromium, type Browser, type BrowserContext, type Cookie, type Page } from "playwright";
 import { getCookiesPath } from "@striderlabs/mcp-doordash/dist/auth.js";
 
 const BASE_URL = "https://www.doordash.com";
+const AUTH_BOOTSTRAP_URL = `${BASE_URL}/home`;
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 180_000;
+const AUTH_BOOTSTRAP_POLL_INTERVAL_MS = 2_000;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
@@ -1005,14 +1007,14 @@ class DoorDashDirectSession {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
-  private attemptedManagedImport = false;
+  private attemptedBrowserImport = false;
 
   async init(options: DirectBrowserOptions = {}): Promise<Page> {
     if (this.page) {
       return this.page;
     }
 
-    await this.maybeImportManagedBrowserSession();
+    await this.maybeImportBrowserSession();
 
     const storageStatePath = getStorageStatePath();
     this.browser = await chromium.launch({
@@ -1127,13 +1129,17 @@ class DoorDashDirectSession {
     throw new Error(`DoorDash request failed for ${input.url}`);
   }
 
-  private async maybeImportManagedBrowserSession(): Promise<void> {
-    if (this.attemptedManagedImport) {
+  markBrowserImportAttempted(): void {
+    this.attemptedBrowserImport = true;
+  }
+
+  private async maybeImportBrowserSession(): Promise<void> {
+    if (this.attemptedBrowserImport) {
       return;
     }
 
-    this.attemptedManagedImport = true;
-    await importManagedBrowserSessionIfAvailable().catch(() => {});
+    this.attemptedBrowserImport = true;
+    await importBrowserSessionIfAvailable().catch(() => {});
   }
 }
 
@@ -1164,28 +1170,58 @@ export async function checkAuthDirect(): Promise<AuthResult> {
 }
 
 export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
-  const page = await session.init({ headed: true });
-  console.error("A Chromium window is open for DoorDash session bootstrap.");
-  console.error("1) Sign in if needed.");
-  console.error("2) Confirm your delivery address if needed.");
-  console.error("3) Return here and press Enter to save the session for direct API use.");
-
-  await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
-
-  const rl = createInterface({ input, output });
-  try {
-    await rl.question("");
-  } finally {
-    rl.close();
+  const imported = await importBrowserSessionIfAvailable().catch(() => false);
+  session.markBrowserImportAttempted();
+  if (imported) {
+    const auth = await checkAuthDirect();
+    return {
+      ...auth,
+      message: auth.isLoggedIn
+        ? "Reused an existing signed-in browser session and saved it for direct API use."
+        : "Imported browser session state, but the consumer still appears to be logged out or guest-only.",
+    };
   }
 
-  await session.saveState();
+  const attachedCandidates = await getAttachedBrowserCdpCandidates();
+  const reachableCandidates = await getReachableCdpCandidates(attachedCandidates);
+  const openedBrowser = await openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
+
+  if (openedBrowser) {
+    console.error(`Opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`);
+  } else {
+    console.error(`Open this URL in your default browser to continue: ${AUTH_BOOTSTRAP_URL}`);
+  }
+
+  console.error("Complete the sign-in in your normal Chromium browser window. I will keep watching for that attached session and import it automatically.");
+  if (reachableCandidates.length === 0) {
+    console.error("No attachable Chromium CDP endpoint was detected yet.");
+    console.error("Start your main browser with remote debugging enabled (for example --remote-debugging-port=9222),");
+    console.error("or set DOORDASH_ATTACHED_BROWSER_CDP_URL / DOORDASH_BROWSER_CDP_URL to an attached browser endpoint.");
+  } else {
+    console.error(`Detected ${reachableCandidates.length} attachable browser endpoint(s). Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
+  }
+
+  const importedAfterWait = await waitForAttachedBrowserSessionImport({
+    timeoutMs: AUTH_BOOTSTRAP_TIMEOUT_MS,
+    pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
+  });
+
   const auth = await checkAuthDirect();
+  if (importedAfterWait) {
+    return {
+      ...auth,
+      message: auth.isLoggedIn
+        ? "Opened DoorDash in your default browser, detected the signed-in session, and saved it for direct API use."
+        : "Detected browser session state after opening the default browser, but the consumer still appears logged out or guest-only.",
+    };
+  }
+
   return {
     ...auth,
-    message: auth.isLoggedIn
-      ? "DoorDash session saved for direct API use."
-      : "DoorDash session state saved, but the consumer still appears to be logged out or guest-only.",
+    message:
+      reachableCandidates.length > 0
+        ? `Opened DoorDash in your default browser and waited ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in browser session was imported. Finish the login in your main browser and rerun dd-cli auth-bootstrap.`
+        : "Opened DoorDash in your default browser, but could not attach to a Chromium session. Start your main browser with remote debugging enabled (for example --remote-debugging-port=9222), then rerun dd-cli auth-bootstrap.",
   };
 }
 
@@ -2009,8 +2045,12 @@ function normalizeAddressText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-async function importManagedBrowserSessionIfAvailable(): Promise<boolean> {
-  for (const cdpUrl of await getManagedBrowserCdpCandidates()) {
+async function importBrowserSessionIfAvailable(): Promise<boolean> {
+  return await importBrowserSessionFromCdpCandidates(await getAttachedBrowserCdpCandidates());
+}
+
+async function importBrowserSessionFromCdpCandidates(candidates: string[]): Promise<boolean> {
+  for (const cdpUrl of candidates) {
     if (!(await isCdpEndpointReachable(cdpUrl))) {
       continue;
     }
@@ -2068,7 +2108,7 @@ async function fetchConsumerViaPage(page: Page): Promise<{ consumer: ConsumerGra
     },
   );
 
-  return parseGraphQlResponse<{ consumer: ConsumerGraph | null }>("managedBrowserConsumerImport", raw.status, raw.text);
+  return parseGraphQlResponse<{ consumer: ConsumerGraph | null }>("attachedBrowserConsumerImport", raw.status, raw.text);
 }
 
 async function saveContextState(context: BrowserContext): Promise<void> {
@@ -2080,45 +2120,177 @@ async function saveContextState(context: BrowserContext): Promise<void> {
   await writeFile(getCookiesPath(), JSON.stringify(cookies, null, 2));
 }
 
-async function getManagedBrowserCdpCandidates(): Promise<string[]> {
+export function resolveAttachedBrowserCdpCandidates(
+  env: NodeJS.ProcessEnv,
+  configCandidates: string[] = [],
+): string[] {
   const candidates = new Set<string>();
-  for (const value of [
-    process.env.DOORDASH_MANAGED_BROWSER_CDP_URL,
-    process.env.OPENCLAW_BROWSER_CDP_URL,
-    process.env.OPENCLAW_OPENCLAW_CDP_URL,
-  ]) {
+  const addCandidate = (value: unknown) => {
     if (typeof value === "string" && value.trim().length > 0) {
-      candidates.add(value.trim().replace(/\/$/, ""));
+      candidates.add(normalizeCdpCandidate(value));
     }
+  };
+
+  addCdpCandidatesFromList(candidates, env.DOORDASH_ATTACHED_BROWSER_CDP_URLS);
+  addCdpCandidatesFromList(candidates, env.DOORDASH_BROWSER_CDP_URLS);
+  addCandidate(env.DOORDASH_ATTACHED_BROWSER_CDP_URL);
+  addCandidate(env.DOORDASH_BROWSER_CDP_URL);
+  addCdpPortCandidatesFromList(candidates, env.DOORDASH_BROWSER_CDP_PORTS);
+  const portCandidate = parseCdpPortCandidate(env.DOORDASH_BROWSER_CDP_PORT);
+  if (portCandidate) {
+    candidates.add(portCandidate);
   }
 
-  for (const value of await readOpenClawBrowserConfigCandidates()) {
-    candidates.add(value.replace(/\/$/, ""));
+  for (const value of configCandidates) {
+    addCandidate(value);
   }
 
-  candidates.add("http://127.0.0.1:18800");
+  addCandidate("http://127.0.0.1:18792");
+  addCandidate("http://127.0.0.1:9222");
   return [...candidates];
 }
 
-async function readOpenClawBrowserConfigCandidates(): Promise<string[]> {
+async function getAttachedBrowserCdpCandidates(): Promise<string[]> {
+  const configCandidates = await readOpenClawBrowserProfileCandidates(["user", "chrome"]);
+  return resolveAttachedBrowserCdpCandidates(process.env, configCandidates);
+}
+
+async function getReachableCdpCandidates(candidates: string[]): Promise<string[]> {
+  const reachable: string[] = [];
+  for (const cdpUrl of candidates) {
+    if (await isCdpEndpointReachable(cdpUrl)) {
+      reachable.push(cdpUrl);
+    }
+  }
+  return reachable;
+}
+
+async function waitForAttachedBrowserSessionImport(input: { timeoutMs: number; pollIntervalMs: number }): Promise<boolean> {
+  const deadline = Date.now() + input.timeoutMs;
+  while (Date.now() <= deadline) {
+    if (await importBrowserSessionIfAvailable().catch(() => false)) {
+      return true;
+    }
+
+    if (Date.now() >= deadline) {
+      break;
+    }
+
+    await wait(input.pollIntervalMs);
+  }
+
+  return false;
+}
+
+export function resolveSystemBrowserOpenCommand(
+  targetUrl: string,
+  targetPlatform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } | null {
+  if (targetPlatform === "darwin") {
+    return { command: "open", args: [targetUrl] };
+  }
+
+  if (targetPlatform === "win32") {
+    return { command: "cmd", args: ["/c", "start", "", targetUrl] };
+  }
+
+  if (["linux", "freebsd", "openbsd", "netbsd", "sunos", "android"].includes(targetPlatform)) {
+    return { command: "xdg-open", args: [targetUrl] };
+  }
+
+  return null;
+}
+
+async function openUrlInDefaultBrowser(targetUrl: string): Promise<boolean> {
+  const command = resolveSystemBrowserOpenCommand(targetUrl);
+  if (!command) {
+    return false;
+  }
+
+  return await new Promise((resolve) => {
+    const child = spawn(command.command, command.args, {
+      detached: process.platform !== "win32",
+      stdio: "ignore",
+    });
+
+    child.once("error", () => resolve(false));
+    child.once("spawn", () => {
+      child.unref();
+      resolve(true);
+    });
+  });
+}
+
+function normalizeCdpCandidate(value: string): string {
+  return value.trim().replace(/\/$/, "");
+}
+
+function addCdpCandidatesFromList(candidates: Set<string>, value: string | undefined): void {
+  if (!value) {
+    return;
+  }
+
+  for (const entry of value.split(/[,\n]/)) {
+    const trimmed = entry.trim();
+    if (trimmed) {
+      candidates.add(normalizeCdpCandidate(trimmed));
+    }
+  }
+}
+
+function addCdpPortCandidatesFromList(candidates: Set<string>, value: string | undefined): void {
+  if (!value) {
+    return;
+  }
+
+  for (const entry of value.split(/[,\n]/)) {
+    const portCandidate = parseCdpPortCandidate(entry.trim());
+    if (portCandidate) {
+      candidates.add(portCandidate);
+    }
+  }
+}
+
+function parseCdpPortCandidate(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return `http://127.0.0.1:${parsed}`;
+}
+
+function appendBrowserConfigCandidate(candidates: string[], value: unknown): void {
+  const object = asObject(value);
+  if (typeof object.cdpUrl === "string" && object.cdpUrl.trim()) {
+    candidates.push(normalizeCdpCandidate(object.cdpUrl));
+  } else if (typeof object.cdpPort === "number" && Number.isInteger(object.cdpPort)) {
+    candidates.push(`http://127.0.0.1:${object.cdpPort}`);
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function readOpenClawBrowserProfileCandidates(profileNames: string[]): Promise<string[]> {
   try {
     const raw = await readFile(join(homedir(), ".openclaw", "openclaw.json"), "utf8");
     const parsed = safeJsonParse<Record<string, unknown>>(raw);
     const browserConfig = asObject(parsed?.browser);
+    const profiles = asObject(browserConfig.profiles);
     const candidates: string[] = [];
 
-    const pushCandidate = (value: unknown) => {
-      const object = asObject(value);
-      if (typeof object.cdpUrl === "string" && object.cdpUrl.trim()) {
-        candidates.push(object.cdpUrl.trim());
-      } else if (typeof object.cdpPort === "number" && Number.isInteger(object.cdpPort)) {
-        candidates.push(`http://127.0.0.1:${object.cdpPort}`);
-      }
-    };
+    for (const profileName of profileNames) {
+      appendBrowserConfigCandidate(candidates, profiles[profileName]);
+    }
 
-    pushCandidate(browserConfig);
-    pushCandidate(browserConfig.openclaw);
-    pushCandidate(asObject(browserConfig.profiles).openclaw);
     return dedupeBy(candidates, (value) => value);
   } catch {
     return [];

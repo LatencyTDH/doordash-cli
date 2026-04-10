@@ -26,6 +26,7 @@ import {
 export const SAFE_COMMANDS = [
   "auth-check",
   "auth-bootstrap",
+  "login",
   "auth-clear",
   "set-address",
   "search",
@@ -52,6 +53,7 @@ export type CommandFlags = Record<string, string>;
 const COMMAND_FLAGS = {
   "auth-check": [],
   "auth-bootstrap": [],
+  login: [],
   "auth-clear": [],
   "set-address": ["address"],
   search: ["query", "cuisine"],
@@ -116,6 +118,7 @@ export async function runCommand(command: SafeCommand, args: CommandFlags): Prom
       return checkAuthDirect();
 
     case "auth-bootstrap":
+    case "login":
       return bootstrapAuthSession();
 
     case "auth-clear":

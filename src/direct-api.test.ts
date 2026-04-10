@@ -7,7 +7,9 @@ import {
   normalizeItemName,
   parseOptionSelectionsJson,
   parseSearchRestaurantRow,
+  resolveAttachedBrowserCdpCandidates,
   resolveAvailableAddressMatch,
+  resolveSystemBrowserOpenCommand,
   type ItemResult,
 } from "./direct-api.js";
 
@@ -114,6 +116,43 @@ function configurableItemDetail(): ItemResult {
 
 test("normalizeItemName trims and collapses whitespace", () => {
   assert.equal(normalizeItemName("  Sushi   premium "), "sushi premium");
+});
+
+test("resolveAttachedBrowserCdpCandidates prioritizes generic explicit envs and defaults", () => {
+  const env = {
+    DOORDASH_BROWSER_CDP_URLS: "http://127.0.0.1:9555/, http://127.0.0.1:9556",
+    DOORDASH_ATTACHED_BROWSER_CDP_URL: "http://127.0.0.1:9666/",
+    DOORDASH_BROWSER_CDP_PORTS: "9333, 9334",
+    DOORDASH_BROWSER_CDP_PORT: "9444",
+  } as NodeJS.ProcessEnv;
+
+  const candidates = resolveAttachedBrowserCdpCandidates(env, ["http://127.0.0.1:9777"]);
+  assert.deepEqual(candidates.slice(0, 6), [
+    "http://127.0.0.1:9555",
+    "http://127.0.0.1:9556",
+    "http://127.0.0.1:9666",
+    "http://127.0.0.1:9333",
+    "http://127.0.0.1:9334",
+    "http://127.0.0.1:9444",
+  ]);
+  assert.ok(candidates.includes("http://127.0.0.1:9777"));
+  assert.ok(candidates.includes("http://127.0.0.1:18792"));
+  assert.ok(candidates.includes("http://127.0.0.1:9222"));
+});
+
+test("resolveSystemBrowserOpenCommand stays generic across operating systems", () => {
+  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "darwin"), {
+    command: "open",
+    args: ["https://www.doordash.com/home"],
+  });
+  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "linux"), {
+    command: "xdg-open",
+    args: ["https://www.doordash.com/home"],
+  });
+  assert.deepEqual(resolveSystemBrowserOpenCommand("https://www.doordash.com/home", "win32"), {
+    command: "cmd",
+    args: ["/c", "start", "", "https://www.doordash.com/home"],
+  });
 });
 
 test("parseSearchRestaurantRow extracts restaurant metadata from facet rows", () => {

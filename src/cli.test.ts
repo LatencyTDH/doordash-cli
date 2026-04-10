@@ -18,6 +18,7 @@ test("safe command allowlist stays cart-safe while adding direct API helpers", (
   assert.deepEqual(SAFE_COMMANDS, [
     "auth-check",
     "auth-bootstrap",
+    "login",
     "auth-clear",
     "set-address",
     "search",
@@ -56,6 +57,7 @@ test("help output shows the direct cart-safe command surface", () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /doordash-cli <command>/);
   assert.match(result.stdout, /auth-bootstrap/);
+  assert.match(result.stdout, /login/);
   assert.match(result.stdout, /set-address --address/);
   assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /Dangerous commands are intentionally unsupported/);

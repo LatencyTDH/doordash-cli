@@ -8,6 +8,7 @@ This project is intentionally limited to browsing and cart management:
 
 - `auth-check`
 - `auth-bootstrap`
+- `login` (alias of `auth-bootstrap`)
 - `auth-clear`
 - `set-address`
 - `search`
@@ -36,8 +37,8 @@ The primary path is DoorDash consumer-web GraphQL/HTTP, not DOM clicking:
 
 - `auth-check`, `set-address`, `search`, `menu`, `item`, `cart`, `add-to-cart`, and `update-cart` use direct request builders + parsers
 - browser usage is limited to:
-  - one-time manual session bootstrap via `auth-bootstrap`
-  - automatic session import from an already-open signed-in OpenClaw managed browser
+  - importing session state from the user's existing signed-in Chromium-family browser
+  - opening DoorDash in the default browser during `auth-bootstrap`, then importing that attached session when available
   - protocol research / recovery when DoorDash changes behavior
 
 This keeps the core integration focused on stable request/response shapes instead of fragile page selectors.
@@ -78,6 +79,7 @@ Examples:
 ```bash
 dd-cli auth-check
 dd-cli auth-bootstrap
+dd-cli login
 dd-cli auth-clear
 dd-cli set-address --address "350 5th Ave, New York, NY 10118"
 dd-cli search --query sushi
@@ -99,27 +101,37 @@ The CLI keeps session material under the same config root as the upstream projec
 - cookies: `~/.config/striderlabs-mcp-doordash/cookies.json`
 - direct-session browser state: `~/.config/striderlabs-mcp-doordash/storage-state.json`
 
-### Managed-browser auto-import
+### Attached-browser auto-import
 
-If an OpenClaw-managed browser is already running with a signed-in DoorDash tab/session, `auth-check` and other direct commands automatically try to import that state into the saved direct-session files before launching a new local browser context.
+`auth-check`, `auth-bootstrap`, and the other direct commands only try to reuse a signed-in session from your existing/main Chromium-family browser when a CDP endpoint is reachable. This is intentionally generic: it works with Chrome, Brave, Edge, or another Chromium-based browser exposing CDP, and it favors your real logged-in profile to reduce anti-bot friction.
 
-Default probe order:
+Probe order:
 
-- `DOORDASH_MANAGED_BROWSER_CDP_URL`
-- `OPENCLAW_BROWSER_CDP_URL`
-- `OPENCLAW_OPENCLAW_CDP_URL`
-- OpenClaw config hints from `~/.openclaw/openclaw.json`
-- fallback default `http://127.0.0.1:18800`
+- `DOORDASH_ATTACHED_BROWSER_CDP_URLS` / `DOORDASH_BROWSER_CDP_URLS` (comma- or newline-separated)
+- `DOORDASH_ATTACHED_BROWSER_CDP_URL` or `DOORDASH_BROWSER_CDP_URL`
+- `DOORDASH_BROWSER_CDP_PORTS` / `DOORDASH_BROWSER_CDP_PORT` (localhost)
+- OpenClaw config profiles `browser.profiles.user` / `browser.profiles.chrome` when present
+- fallback defaults `http://127.0.0.1:18792` (OpenClaw Chrome extension relay) and `http://127.0.0.1:9222` (standard remote debugging)
 
-### Recommended bootstrap
+There is no separate managed-Chromium login fallback anymore.
 
-Use `auth-bootstrap` once when you need a fresh reusable session and there is no already-open signed-in managed browser to import:
+### `auth-bootstrap` / `login` (`az login`-style)
+
+Use `auth-bootstrap` or the shorter `login` alias when you want the CLI to open DoorDash in your default browser and wait for a reusable session:
 
 ```bash
 dd-cli auth-bootstrap
+dd-cli login
 ```
 
-That opens Chromium, lets you sign in manually, then saves the browser state for later direct API calls.
+Behavior:
+
+1. the CLI first tries to import an already-signed-in attached browser session
+2. if it cannot, it opens `https://www.doordash.com/home` in your default browser
+3. it waits for you to finish signing in in that same browser session
+4. once the attached browser session is authenticated, it saves cookies/storage state for later direct API calls
+
+If no attachable Chromium CDP endpoint is reachable, the CLI still opens the URL and tells you how to expose your main browser session (for example `--remote-debugging-port=9222` or a configured attached-browser CDP URL). That is the remaining infrastructure requirement for full browser-open → import automation in a generic OSS setup.
 
 ### `auth-check`
 
@@ -130,7 +142,7 @@ That opens Chromium, lets you sign in manually, then saves the browser state for
 ### Implemented direct support
 
 - auth/session check
-- managed-browser session import into saved direct-session state
+- attached-browser session import into saved direct-session state
 - search
 - menu fetch
 - item detail fetch
@@ -226,7 +238,7 @@ Expected behavior:
 
 ## Implementation notes
 
-- Direct request builders, parsers, managed-browser import, and address/configurable-item helpers live in `src/direct-api.ts`
+- Direct request builders, parsers, attached-browser import/bootstrap helpers, and address/configurable-item helpers live in `src/direct-api.ts`
 - Safe command allowlist and command dispatch live in `src/lib.ts`
 - CLI parsing/output lives in `src/cli.ts`
 - Tests cover allowlist guardrails plus direct request-building and parsing helpers
