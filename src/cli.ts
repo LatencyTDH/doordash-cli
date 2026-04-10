@@ -44,11 +44,12 @@ export function usage(): string {
     "  - Run with no arguments to show this help.",
     "  - Common Unicode long dashes are normalized for flags, so —help / –help work too.",
     "  - Installed command names are lowercase only: dd-cli and doordash-cli.",
-    "  - install-browser downloads the bundled Playwright Chromium runtime used by this package.",
+    "  - install-browser downloads the bundled Playwright Chromium runtime used by this package for direct API work and the temporary login-window fallback.",
     "  - Manual pages ship with the project: man dd-cli or man doordash-cli.",
     "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, orders, order, cart, add-to-cart, and update-cart.",
-    "  - login first checks saved local auth, then tries importing an already-signed-in browser session, then opens DoorDash in your default browser only when needed.",
-    "  - login only stays in the long wait loop when it has a reusable browser connection it can actually watch; otherwise it exits quickly with troubleshooting guidance.",
+    "  - login first checks saved local auth, then tries importing an already-signed-in browser session, then opens DoorDash in a watchable browser it can actually follow.",
+    "  - when a reusable attached browser is discoverable, login opens DoorDash there and watches it directly; otherwise it falls back to a temporary Chromium login window the CLI can watch itself.",
+    "  - login exits non-zero when authentication still was not established.",
     "  - auth-check can quietly reuse/import an already-signed-in browser session when one is available, unless logout explicitly disabled that auto-reuse.",
     "  - logout clears saved session files and disables automatic browser-session reuse until the next login.",
     "  - set-address now uses DoorDash autocomplete/get-or-create plus addConsumerAddressV2 for brand-new address enrollment when needed.",
@@ -148,6 +149,17 @@ export function parseArgv(argv: string[]): { command?: string; flags: Record<str
   return { command, flags };
 }
 
+export function commandExitCode(command: string, result: unknown): number {
+  if (command === "login" && typeof result === "object" && result !== null) {
+    const authResult = result as { success?: unknown; isLoggedIn?: unknown };
+    if (authResult.success === false || authResult.isLoggedIn === false) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const { command, flags } = parseArgv(argv);
 
@@ -168,7 +180,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   try {
     const result = await lib.runCommand(safeCommand, flags);
     console.log(JSON.stringify(result, null, 2));
-    process.exitCode = 0;
+    process.exitCode = commandExitCode(safeCommand, result);
   } finally {
     await lib.shutdown();
   }

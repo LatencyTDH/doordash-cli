@@ -265,6 +265,9 @@ test("bootstrapAuthSessionWithDeps returns immediately when saved local auth is 
     getReachableCdpCandidates: async () => {
       throw new Error("should not probe reachability when saved auth is already valid");
     },
+    openUrlInAttachedBrowser: async () => {
+      throw new Error("should not try to open an attached browser when saved auth is already valid");
+    },
     openUrlInDefaultBrowser: async () => {
       openCalls += 1;
       return true;
@@ -272,6 +275,9 @@ test("bootstrapAuthSessionWithDeps returns immediately when saved local auth is 
     waitForAttachedBrowserSessionImport: async () => {
       waitCalls += 1;
       return true;
+    },
+    waitForManagedBrowserLogin: async () => {
+      throw new Error("should not launch a managed browser when saved auth is already valid");
     },
     checkAuthDirect: async () => {
       throw new Error("should not re-check auth through the live session when saved auth is already valid");
@@ -321,6 +327,9 @@ test("bootstrapAuthSessionWithDeps returns immediately when an attached browser 
     getReachableCdpCandidates: async () => {
       throw new Error("should not probe reachability on immediate browser-session import");
     },
+    openUrlInAttachedBrowser: async () => {
+      throw new Error("should not open a browser when immediate browser-session import succeeded");
+    },
     openUrlInDefaultBrowser: async () => {
       openCalls += 1;
       return true;
@@ -328,6 +337,9 @@ test("bootstrapAuthSessionWithDeps returns immediately when an attached browser 
     waitForAttachedBrowserSessionImport: async () => {
       waitCalls += 1;
       return true;
+    },
+    waitForManagedBrowserLogin: async () => {
+      throw new Error("should not launch a managed browser when immediate browser-session import succeeded");
     },
     checkAuthDirect: async () => auth,
     log: (message) => {
@@ -343,7 +355,7 @@ test("bootstrapAuthSessionWithDeps returns immediately when an attached browser 
   assert.match(result.message, /Imported an existing signed-in browser session/);
 });
 
-test("bootstrapAuthSessionWithDeps only enters the full wait path when auth is not already present and a browser connection is watchable", async () => {
+test("bootstrapAuthSessionWithDeps opens a watchable attached browser session before entering the full wait path", async () => {
   const auth: AuthResult = {
     success: true,
     isLoggedIn: true,
@@ -357,7 +369,8 @@ test("bootstrapAuthSessionWithDeps only enters the full wait path when auth is n
     storageStatePath: "/tmp/storage-state.json",
   };
 
-  let openCalls = 0;
+  let openAttachedCalls = 0;
+  let openDefaultCalls = 0;
   let waitCalls = 0;
   let reachableCalls = 0;
   let waitTimeoutMs = 0;
@@ -372,14 +385,21 @@ test("bootstrapAuthSessionWithDeps only enters the full wait path when auth is n
       reachableCalls += 1;
       return candidates;
     },
+    openUrlInAttachedBrowser: async () => {
+      openAttachedCalls += 1;
+      return true;
+    },
     openUrlInDefaultBrowser: async () => {
-      openCalls += 1;
+      openDefaultCalls += 1;
       return true;
     },
     waitForAttachedBrowserSessionImport: async (input) => {
       waitCalls += 1;
       waitTimeoutMs = input.timeoutMs;
       return true;
+    },
+    waitForManagedBrowserLogin: async () => {
+      throw new Error("should not launch a managed browser when an attached browser is reachable");
     },
     checkAuthDirect: async () => auth,
     log: (message) => {
@@ -388,15 +408,64 @@ test("bootstrapAuthSessionWithDeps only enters the full wait path when auth is n
   });
 
   assert.equal(reachableCalls, 1);
-  assert.equal(openCalls, 1);
+  assert.equal(openAttachedCalls, 1);
+  assert.equal(openDefaultCalls, 0);
   assert.equal(waitCalls, 1);
   assert.equal(waitTimeoutMs, 180_000);
-  assert.match(logs.join("\n"), /Opened DoorDash in your default browser/);
+  assert.match(logs.join("\n"), /Opened DoorDash in the reusable browser session I'm watching/);
   assert.match(logs.join("\n"), /Detected 1 reusable browser connection/);
-  assert.match(result.message, /detected the signed-in session/);
+  assert.match(result.message, /saved it for direct API use/);
 });
 
-test("bootstrapAuthSessionWithDeps avoids the full wait path when no reusable browser connection is discoverable yet", async () => {
+test("bootstrapAuthSessionWithDeps falls back to a managed browser login window when no reusable browser connection is discoverable", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: true,
+    email: "user@example.com",
+    firstName: "Test",
+    lastName: "User",
+    consumerId: "consumer-1",
+    marketId: "market-1",
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  let managedCalls = 0;
+  let attachedWaitCalls = 0;
+  const logs: string[] = [];
+  const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {},
+    checkPersistedAuth: async () => null,
+    importBrowserSessionIfAvailable: async () => false,
+    markBrowserImportAttempted: () => {},
+    getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
+    getReachableCdpCandidates: async () => [],
+    openUrlInAttachedBrowser: async () => false,
+    openUrlInDefaultBrowser: async () => true,
+    waitForAttachedBrowserSessionImport: async () => {
+      attachedWaitCalls += 1;
+      return false;
+    },
+    waitForManagedBrowserLogin: async () => {
+      managedCalls += 1;
+      return auth;
+    },
+    checkAuthDirect: async () => auth,
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.equal(managedCalls, 1);
+  assert.equal(attachedWaitCalls, 0);
+  assert.match(logs.join("\n"), /temporary Chromium login window/);
+  assert.match(result.message, /temporary Chromium login window/);
+  assert.equal(result.success, true);
+  assert.equal(result.isLoggedIn, true);
+});
+
+test("bootstrapAuthSessionWithDeps falls back to quick troubleshooting guidance when the managed browser login window cannot launch", async () => {
   const auth: AuthResult = {
     success: true,
     isLoggedIn: false,
@@ -410,8 +479,8 @@ test("bootstrapAuthSessionWithDeps avoids the full wait path when no reusable br
     storageStatePath: "/tmp/storage-state.json",
   };
 
-  let waitCalls = 0;
-  let waitTimeoutMs = 0;
+  let attachedWaitCalls = 0;
+  let attachedWaitTimeoutMs = 0;
   const logs: string[] = [];
   const result = await bootstrapAuthSessionWithDeps({
     clearBlockedBrowserImport: async () => {},
@@ -420,21 +489,26 @@ test("bootstrapAuthSessionWithDeps avoids the full wait path when no reusable br
     markBrowserImportAttempted: () => {},
     getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
     getReachableCdpCandidates: async () => [],
+    openUrlInAttachedBrowser: async () => false,
     openUrlInDefaultBrowser: async () => true,
     waitForAttachedBrowserSessionImport: async (input) => {
-      waitCalls += 1;
-      waitTimeoutMs = input.timeoutMs;
+      attachedWaitCalls += 1;
+      attachedWaitTimeoutMs = input.timeoutMs;
       return false;
     },
+    waitForManagedBrowserLogin: async () => null,
     checkAuthDirect: async () => auth,
     log: (message) => {
       logs.push(message);
     },
   });
 
-  assert.equal(waitCalls, 1);
-  assert.equal(waitTimeoutMs, 10_000);
-  assert.match(logs.join("\n"), /won't keep you waiting for the full login timeout/);
+  assert.equal(attachedWaitCalls, 1);
+  assert.equal(attachedWaitTimeoutMs, 10_000);
+  assert.match(logs.join("\n"), /couldn't launch the temporary Chromium login window/i);
+  assert.match(logs.join("\n"), /won't keep you waiting for the full login timeout/i);
+  assert.equal(result.success, false);
+  assert.equal(result.isLoggedIn, false);
   assert.match(result.message, /still isn't exposing a reusable browser session/);
 });
 

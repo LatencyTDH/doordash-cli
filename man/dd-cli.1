@@ -31,7 +31,7 @@ is installed as a lowercase alias.
 .TP
 .B install-browser
 Install the bundled Playwright Chromium runtime used by this package's local
-session execution.
+session execution and its temporary Chromium login-window fallback.
 .TP
 .B auth-check
 Verify whether the saved session appears authenticated. This command can also
@@ -44,10 +44,13 @@ explicitly disabled that auto-reuse.
 First check whether the saved local DoorDash session is still authenticated.
 If it is, exit immediately without opening a browser. Otherwise try to import
 an already-signed-in discoverable browser session. If that still is not enough,
-open DoorDash in the default browser. The CLI only sits in the full login wait
-loop when it has a reusable browser connection it can actually watch;
-otherwise it exits quickly with troubleshooting guidance instead of burning the
-full timeout.
+open DoorDash in a watchable browser the CLI can actually follow: a reusable
+attached browser when one is discoverable, otherwise a temporary Chromium login
+window. Only if that watchable fallback cannot be launched does the CLI fall
+back to opening the default browser and exiting quickly with troubleshooting
+guidance. If authentication is still not established,
+.B login
+exits non-zero.
 .TP
 .B logout
 Delete stored session material used by this CLI and disable automatic
@@ -215,7 +218,9 @@ In the common case you should not need to configure browser plumbing manually.
 When browser-session import is needed, the CLI probes compatible discovery
 inputs including explicit DoorDash browser CDP URLs/ports, compatibility
 OpenClaw env vars, OpenClaw browser config entries, and localhost defaults
-127.0.0.1:18792, 127.0.0.1:18800, and 127.0.0.1:9222. See
+127.0.0.1:18792, 127.0.0.1:18800, and 127.0.0.1:9222. If no reusable browser
+connection is discoverable, login falls back to a temporary Chromium window it
+can watch directly. See
 .I docs/install.md
 in the project for the exact discovery order.
 .SH EXIT STATUS

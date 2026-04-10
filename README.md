@@ -55,7 +55,7 @@ doordash-cli install-browser
 npm run install:browser
 ```
 
-That runtime is used for the CLI's local direct-session execution. It is not a separate browser fallback for the login UX.
+That runtime is used for the CLI's local direct-session execution and the temporary Chromium login-window fallback when no reusable browser session is discoverable.
 
 ## First run
 
@@ -78,11 +78,10 @@ If you are running from a checkout without `npm link`, replace `doordash-cli` wi
 2. if it is, exit immediately without opening a browser
 3. otherwise try to import an already-signed-in discoverable browser session
 4. if that succeeds, save it for later direct API calls and exit immediately
-5. otherwise open DoorDash in your default browser
-6. if the CLI can actually watch a reusable browser connection, wait up to 180 seconds for sign-in to complete and then import that session
-7. if no reusable browser connection is discoverable yet, do only a brief grace check and then exit quickly with troubleshooting guidance instead of burning the full timeout
-
-There is no separate managed-Chromium login fallback.
+5. otherwise, if the CLI can watch a reusable attached browser connection, open DoorDash there and wait up to 180 seconds for sign-in to complete
+6. if no reusable browser connection is discoverable yet, open a temporary Chromium login window that the CLI can watch directly and wait up to 180 seconds there instead
+7. only if that watchable fallback browser cannot be launched does the CLI fall back to opening your default browser and exiting quickly with troubleshooting guidance
+8. if authentication still is not established, `login` exits non-zero instead of pretending success
 
 ### `auth-check`
 
@@ -96,9 +95,9 @@ When a reusable signed-in browser session is already discoverable, `auth-check` 
 
 ### Browser-session troubleshooting
 
-The happy path is `dd-cli login` opening your normal browser and importing the session automatically.
+The happy path is `dd-cli login` either reusing an already-discoverable signed-in browser session or opening a temporary Chromium login window that the CLI can watch directly.
 
-Under the hood, the CLI still needs a discoverable browser connection to read that signed-in session. If it cannot find one, it now exits quickly instead of sitting through the full login timeout. See the install guide for the exact discovery inputs it checks (environment variables, OpenClaw browser config, and default localhost CDP ports), then rerun `dd-cli login`.
+Under the hood, the CLI still prefers a discoverable browser connection when one is available, because that lets it import an existing signed-in session without making you sign in again. If it cannot find one, it now falls back to a watchable Chromium login window instead of immediately giving up. See the install guide for the exact discovery inputs it checks (environment variables, OpenClaw browser config, and default localhost CDP ports) when you want attached-browser reuse to work too.
 
 ## Command surface
 

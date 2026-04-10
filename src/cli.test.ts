@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { SAFE_COMMANDS, assertAllowedFlags, assertSafeCommand } from "./lib.js";
-import { parseArgv, version } from "./cli.js";
+import { commandExitCode, parseArgv, version } from "./cli.js";
 
 const distDir = dirname(fileURLToPath(import.meta.url));
 const binPath = join(distDir, "bin.js");
@@ -126,15 +126,15 @@ test("help output shows the direct read-only/cart-safe command surface", () => {
   assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /--version, -v/);
   assert.match(result.stdout, /man dd-cli/);
-  assert.match(result.stdout, /login first checks saved local auth, then tries importing an already-signed-in browser session, then opens DoorDash in your default browser only when needed\./);
-  assert.match(result.stdout, /login only stays in the long wait loop when it has a reusable browser connection it can actually watch; otherwise it exits quickly with troubleshooting guidance\./);
+  assert.match(result.stdout, /login first checks saved local auth, then tries importing an already-signed-in browser session, then opens DoorDash in a watchable browser it can actually follow\./);
+  assert.match(result.stdout, /when a reusable attached browser is discoverable, login opens DoorDash there and watches it directly; otherwise it falls back to a temporary Chromium login window the CLI can watch itself\./);
+  assert.match(result.stdout, /login exits non-zero when authentication still was not established\./);
   assert.match(result.stdout, /auth-check can quietly reuse\/import an already-signed-in browser session when one is available, unless logout explicitly disabled that auto-reuse\./);
   assert.match(result.stdout, /logout clears saved session files and disables automatic browser-session reuse until the next login\./);
   assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
   assert.doesNotMatch(result.stdout, /auth-bootstrap/);
   assert.doesNotMatch(result.stdout, /auth-clear/);
-  assert.doesNotMatch(result.stdout, /launches Chromium/i);
-  assert.doesNotMatch(result.stdout, /managed-browser/i);
+  assert.match(result.stdout, /temporary Chromium login window/i);
   assert.doesNotMatch(result.stdout, /Dd-cli/);
 });
 
@@ -147,7 +147,7 @@ test("repository ships man pages for the supported lowercase command names", () 
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-bootstrap/);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /auth-clear/);
   assert.match(readFileSync(ddManPath, "utf8"), /automatic\s+browser-session reuse stays disabled until the next explicit/i);
-  assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /managed-browser/i);
+  assert.match(readFileSync(ddManPath, "utf8"), /temporary Chromium.*window/i);
   assert.doesNotMatch(readFileSync(ddManPath, "utf8"), /Dd-cli/);
   assert.equal(readFileSync(aliasManPath, "utf8").trim(), ".so man1/dd-cli.1");
 });
@@ -188,6 +188,12 @@ test("legacy auth command invocations point users to login/logout", () => {
   assert.equal(logoutRename.status, 1);
   assert.match(logoutRename.stderr, /Unsupported command: auth-clear/);
   assert.match(logoutRename.stderr, /renamed it to logout/);
+});
+
+test("commandExitCode treats failed login results as non-zero without changing read-only auth-check semantics", () => {
+  assert.equal(commandExitCode("login", { success: false, isLoggedIn: false }), 1);
+  assert.equal(commandExitCode("login", { success: true, isLoggedIn: true }), 0);
+  assert.equal(commandExitCode("auth-check", { success: true, isLoggedIn: false }), 0);
 });
 
 test("logout clears persisted session artifacts in the active home directory", async () => {

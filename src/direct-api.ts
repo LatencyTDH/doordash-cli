@@ -729,9 +729,17 @@ export type AuthResult = {
   storageStatePath: string;
 };
 
-export type AuthBootstrapResult = AuthResult & {
-  message: string;
-};
+export type AuthBootstrapResult =
+  | (AuthResult & {
+      success: true;
+      isLoggedIn: true;
+      message: string;
+    })
+  | (Omit<AuthResult, "success" | "isLoggedIn"> & {
+      success: false;
+      isLoggedIn: false;
+      message: string;
+    });
 
 export type SearchRestaurantResult = {
   id: string;
@@ -1450,8 +1458,10 @@ type BootstrapAuthSessionDeps = {
   markBrowserImportAttempted: () => void;
   getAttachedBrowserCdpCandidates: () => Promise<string[]>;
   getReachableCdpCandidates: (candidates: string[]) => Promise<string[]>;
+  openUrlInAttachedBrowser: (input: { cdpUrl: string; targetUrl: string }) => Promise<boolean>;
   openUrlInDefaultBrowser: (targetUrl: string) => Promise<boolean>;
   waitForAttachedBrowserSessionImport: (input: { timeoutMs: number; pollIntervalMs: number }) => Promise<boolean>;
+  waitForManagedBrowserLogin: (input: { targetUrl: string; timeoutMs: number; pollIntervalMs: number }) => Promise<AuthResult | null>;
   checkAuthDirect: () => Promise<AuthResult>;
   log: (message: string) => void;
 };
@@ -1479,6 +1489,29 @@ function buildAuthResult(consumer: ConsumerGraph | null): AuthResult {
   };
 }
 
+function buildAuthBootstrapSuccess(auth: AuthResult, message: string): AuthBootstrapResult {
+  if (!auth.isLoggedIn) {
+    return buildAuthBootstrapFailure(auth, message);
+  }
+
+  return {
+    ...auth,
+    success: true,
+    isLoggedIn: true,
+    message,
+  };
+}
+
+function buildAuthBootstrapFailure(auth: AuthResult | null, message: string): AuthBootstrapResult {
+  const base = auth ?? buildAuthResult(null);
+  return {
+    ...base,
+    success: false,
+    isLoggedIn: false,
+    message,
+  };
+}
+
 export async function checkAuthDirect(): Promise<AuthResult> {
   const data = await session.graphql<{ consumer: ConsumerGraph | null }>("consumer", CONSUMER_QUERY, {});
   return buildAuthResult(data.consumer ?? null);
@@ -1489,87 +1522,103 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
 
   const persistedAuth = await deps.checkPersistedAuth().catch(() => null);
   if (persistedAuth?.isLoggedIn) {
-    return {
-      ...persistedAuth,
-      message: "Already signed in with saved local DoorDash session state. No browser interaction was needed.",
-    };
+    return buildAuthBootstrapSuccess(persistedAuth, "Already signed in with saved local DoorDash session state. No browser interaction was needed.");
   }
 
   const imported = await deps.importBrowserSessionIfAvailable().catch(() => false);
   deps.markBrowserImportAttempted();
   if (imported) {
     const auth = await deps.checkAuthDirect();
-    return {
-      ...auth,
-      message: auth.isLoggedIn
-        ? "Imported an existing signed-in browser session and saved it for direct API use."
-        : "Imported browser session state, but the consumer still appears to be logged out or guest-only.",
-    };
+    return auth.isLoggedIn
+      ? buildAuthBootstrapSuccess(auth, "Imported an existing signed-in browser session and saved it for direct API use.")
+      : buildAuthBootstrapFailure(auth, "Imported browser session state, but the consumer still appears to be logged out or guest-only.");
   }
 
   const attachedCandidates = await deps.getAttachedBrowserCdpCandidates();
   const reachableCandidates = await deps.getReachableCdpCandidates(attachedCandidates);
-  const openedBrowser = await deps.openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
 
-  deps.log(
-    openedBrowser
-      ? `Opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`
-      : `Couldn't open your default browser automatically. Open this URL to continue: ${AUTH_BOOTSTRAP_URL}`,
-  );
+  if (reachableCandidates.length > 0) {
+    const openedAttachedBrowser = await deps.openUrlInAttachedBrowser({
+      cdpUrl: reachableCandidates[0]!,
+      targetUrl: AUTH_BOOTSTRAP_URL,
+    });
+    const openedDefaultBrowser = openedAttachedBrowser ? false : await deps.openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
 
-  if (reachableCandidates.length === 0) {
     deps.log(
-      "I couldn't find a reusable browser connection yet, so I won't keep you waiting for the full login timeout. I'll watch briefly in case one appears after the browser opens.",
+      openedAttachedBrowser
+        ? `Opened DoorDash in the reusable browser session I'm watching: ${AUTH_BOOTSTRAP_URL}`
+        : openedDefaultBrowser
+          ? `Found a reusable browser connection, but couldn't drive it directly, so I opened DoorDash in your default browser: ${AUTH_BOOTSTRAP_URL}`
+          : `Detected a reusable browser connection, but couldn't open DoorDash automatically. Open this URL in that watched browser to continue: ${AUTH_BOOTSTRAP_URL}`,
+    );
+    deps.log(
+      `Detected ${reachableCandidates.length} reusable browser connection(s). Finish the sign-in in that browser window and I'll import it automatically for up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds.`,
     );
 
-    const importedAfterGrace = await deps.waitForAttachedBrowserSessionImport({
-      timeoutMs: AUTH_BOOTSTRAP_NO_DISCOVERY_GRACE_MS,
+    const importedAfterWait = await deps.waitForAttachedBrowserSessionImport({
+      timeoutMs: AUTH_BOOTSTRAP_TIMEOUT_MS,
       pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
     });
 
     const auth = await deps.checkAuthDirect();
-    if (importedAfterGrace) {
-      return {
-        ...auth,
-        message: auth.isLoggedIn
-          ? "Opened DoorDash in your default browser, discovered a reusable browser session a few seconds later, and saved it for direct API use."
-          : "Detected browser session state after opening the default browser, but the consumer still appears logged out or guest-only.",
-      };
+    if (importedAfterWait) {
+      return auth.isLoggedIn
+        ? buildAuthBootstrapSuccess(auth, "Opened DoorDash in a reusable browser session, detected the signed-in consumer state, and saved it for direct API use.")
+        : buildAuthBootstrapFailure(auth, "Detected browser session state in the watched browser, but the consumer still appears logged out or guest-only.");
     }
 
-    return {
-      ...auth,
-      message: openedBrowser
-        ? "Opened DoorDash in your default browser, but this environment still isn't exposing a reusable browser session the CLI can import. Finish signing in there, make a compatible browser session discoverable, then rerun `dd-cli login`."
-        : "Couldn't open your default browser automatically, and this environment still isn't exposing a reusable browser session the CLI can import. Open the DoorDash home page manually, make a compatible browser session discoverable, then rerun `dd-cli login`.",
-    };
+    return buildAuthBootstrapFailure(
+      auth,
+      openedAttachedBrowser || openedDefaultBrowser
+        ? `Opened DoorDash and watched reusable browser connections for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in DoorDash session was imported. Finish the login in that watched browser and rerun dd-cli login.`
+        : `Watched reusable browser connections for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds without importing a signed-in DoorDash session. Open ${AUTH_BOOTSTRAP_URL} manually in the watched browser, finish signing in, then rerun dd-cli login.`,
+    );
   }
 
   deps.log(
-    `Detected ${reachableCandidates.length} reusable browser connection(s). Finish the sign-in in that browser window and I'll import it automatically for up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds.`,
+    "I couldn't find a reusable browser connection, so I'm opening a temporary Chromium login window that the CLI can watch directly.",
   );
 
-  const importedAfterWait = await deps.waitForAttachedBrowserSessionImport({
+  const managedAuth = await deps.waitForManagedBrowserLogin({
+    targetUrl: AUTH_BOOTSTRAP_URL,
     timeoutMs: AUTH_BOOTSTRAP_TIMEOUT_MS,
     pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
   });
 
-  const auth = await deps.checkAuthDirect();
-  if (importedAfterWait) {
-    return {
-      ...auth,
-      message: auth.isLoggedIn
-        ? "Opened DoorDash in your default browser, detected the signed-in session, and saved it for direct API use."
-        : "Detected browser session state after opening the default browser, but the consumer still appears logged out or guest-only.",
-    };
+  if (managedAuth) {
+    return managedAuth.isLoggedIn
+      ? buildAuthBootstrapSuccess(managedAuth, "Opened a temporary Chromium login window, detected the signed-in session there, and saved it for direct API use.")
+      : buildAuthBootstrapFailure(managedAuth, `Opened a temporary Chromium login window and watched for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no authenticated DoorDash session was established.`);
   }
 
-  return {
-    ...auth,
-    message: openedBrowser
-      ? `Opened DoorDash in your default browser and watched for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no signed-in browser session was imported. Finish the login in that browser and rerun dd-cli login.`
-      : `Couldn't open your default browser automatically, but watched existing browser connections for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds without importing a signed-in DoorDash session. Open ${AUTH_BOOTSTRAP_URL} manually in the watched browser, finish signing in, then rerun dd-cli login.`,
-  };
+  const openedBrowser = await deps.openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
+  deps.log(
+    openedBrowser
+      ? `I couldn't launch the temporary Chromium login window, so I opened DoorDash in your default browser instead: ${AUTH_BOOTSTRAP_URL}`
+      : `Couldn't open the temporary Chromium login window or your default browser automatically. Open this URL to continue: ${AUTH_BOOTSTRAP_URL}`,
+  );
+  deps.log(
+    "This environment still isn't exposing a reusable browser session the CLI can import, so I won't keep you waiting for the full login timeout. Once you've exposed a compatible browser session, rerun `dd-cli login`.",
+  );
+
+  const importedAfterGrace = await deps.waitForAttachedBrowserSessionImport({
+    timeoutMs: AUTH_BOOTSTRAP_NO_DISCOVERY_GRACE_MS,
+    pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
+  });
+
+  const auth = await deps.checkAuthDirect();
+  if (importedAfterGrace) {
+    return auth.isLoggedIn
+      ? buildAuthBootstrapSuccess(auth, "A reusable browser session appeared a few seconds later and was saved for direct API use.")
+      : buildAuthBootstrapFailure(auth, "Detected browser session state after opening the browser, but the consumer still appears logged out or guest-only.");
+  }
+
+  return buildAuthBootstrapFailure(
+    auth,
+    openedBrowser
+      ? "Opened DoorDash in your default browser, but this environment still isn't exposing a reusable browser session the CLI can import. Finish signing in there, make a compatible browser session discoverable, then rerun `dd-cli login`."
+      : "Couldn't open a watchable browser automatically, and this environment still isn't exposing a reusable browser session the CLI can import. Open the DoorDash home page manually, make a compatible browser session discoverable, then rerun `dd-cli login`.",
+  );
 }
 
 export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
@@ -1580,8 +1629,10 @@ export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
     markBrowserImportAttempted: () => session.markBrowserImportAttempted(),
     getAttachedBrowserCdpCandidates,
     getReachableCdpCandidates,
+    openUrlInAttachedBrowser,
     openUrlInDefaultBrowser,
     waitForAttachedBrowserSessionImport,
+    waitForManagedBrowserLogin,
     checkAuthDirect,
     log: (message) => console.error(message),
   });
@@ -2754,6 +2805,109 @@ async function openUrlInDefaultBrowser(targetUrl: string): Promise<boolean> {
       resolve(true);
     });
   });
+}
+
+async function openUrlInAttachedBrowser(input: { cdpUrl: string; targetUrl: string }): Promise<boolean> {
+  let browser: Browser | null = null;
+
+  try {
+    browser = await chromium.connectOverCDP(input.cdpUrl);
+    const context = browser.contexts()[0];
+    if (!context) {
+      return false;
+    }
+
+    let page = context.pages().find((candidate) => isDoorDashUrl(candidate.url())) ?? null;
+    if (!page) {
+      page = await context.newPage();
+    }
+
+    await page.goto(input.targetUrl, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+    await page.bringToFront().catch(() => {});
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await browser?.close().catch(() => {});
+  }
+}
+
+async function waitForManagedBrowserLogin(input: {
+  targetUrl: string;
+  timeoutMs: number;
+  pollIntervalMs: number;
+}): Promise<AuthResult | null> {
+  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
+  let page: Page | null = null;
+
+  try {
+    browser = await chromium.launch({
+      headless: false,
+      args: ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"],
+    });
+
+    const storageStatePath = getStorageStatePath();
+    const hasStorage = await hasStorageState();
+    context = await browser.newContext({
+      userAgent: DEFAULT_USER_AGENT,
+      locale: "en-US",
+      viewport: { width: 1280, height: 900 },
+      ...(hasStorage ? { storageState: storageStatePath } : {}),
+    });
+
+    if (!hasStorage) {
+      const cookies = await readStoredCookies();
+      if (cookies.length > 0) {
+        await context.addCookies(cookies);
+      }
+    }
+
+    page = await context.newPage();
+    await page.goto(input.targetUrl, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+    await page.bringToFront().catch(() => {});
+
+    const deadline = Date.now() + input.timeoutMs;
+    while (Date.now() <= deadline) {
+      await saveContextState(context).catch(() => {});
+      const auth = await getPersistedAuthDirect();
+      if (auth?.isLoggedIn) {
+        return auth;
+      }
+
+      if (page.isClosed()) {
+        break;
+      }
+
+      if (Date.now() >= deadline) {
+        break;
+      }
+
+      await wait(input.pollIntervalMs);
+    }
+
+    await saveContextState(context).catch(() => {});
+    return (await getPersistedAuthDirect()) ?? buildAuthResult(null);
+  } catch (error) {
+    if (isPlaywrightBrowserInstallMissingError(error)) {
+      return null;
+    }
+
+    return null;
+  } finally {
+    await page?.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
+  }
+}
+
+function isPlaywrightBrowserInstallMissingError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("executable doesn't exist") || message.includes("please run the following command") || message.includes("playwright install");
 }
 
 function normalizeCdpCandidate(value: string): string {
