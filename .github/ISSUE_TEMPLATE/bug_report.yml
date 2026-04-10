@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a defect in doordash-cli's cart-safe command surface, auth flow, packaging, or docs.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please include enough detail to reproduce the issue without pasting secrets, cookies, or other sensitive account data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug and the user-visible impact.
+      placeholder: The CLI exits non-zero after login even though an attached browser session is already authenticated.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+      placeholder: login should reuse the authenticated browser session and exit successfully.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: `doordash-cli --version`, npm version, or commit SHA.
+      placeholder: 0.4.2
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Which Node.js/runtime environment did you use?
+      options:
+        - Node.js 20
+        - Node.js 22
+        - Other / unknown
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command
+      description: Include the exact command or workflow, but redact secrets and private data.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output or logs
+      description: Paste the smallest useful snippet. Redact cookies, tokens, addresses, and personal data.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Run `dd-cli login`
+        2. Keep Brave signed in to DoorDash
+        3. Observe ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope checks
+      options:
+        - label: I confirmed this report is about the documented cart-safe/read-only command surface, not a request for checkout/payment/order-mutation support.
+          required: true
+        - label: I redacted secrets and sensitive account data from the report.
+          required: true
+        - label: I understand that security-sensitive issues should go through SECURITY.md instead of a detailed public issue.
+          required: true

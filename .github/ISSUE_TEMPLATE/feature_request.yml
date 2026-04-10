@@ -1,0 +1,56 @@
+name: Feature request
+description: Propose a safe, reviewable improvement to doordash-cli.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. This repo intentionally stays cart-safe, so the most useful requests are specific, reviewable, and clearly within that boundary.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      placeholder: I can inspect menus, but I cannot filter existing orders by active status from the CLI.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the command, output, or workflow you want.
+      placeholder: Add `dd-cli orders --active-only` and keep the output JSON-friendly.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: I can grep the JSON today, but it is awkward and not obvious.
+    validations:
+      required: false
+  - type: textarea
+    id: scope
+    attributes:
+      label: Cart-safe / scope notes
+      description: Explain why this stays within the project's browse/read-only/cart-safe boundaries.
+      placeholder: This only filters existing order data; it does not place, cancel, or mutate orders.
+    validations:
+      required: true
+  - type: textarea
+    id: docs
+    attributes:
+      label: Docs or examples impact
+      description: Mention README/help/examples changes that would make the feature easier to adopt.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: This request does not ask for checkout, payment, cancellation, or other irreversible order mutation support.
+          required: true
+        - label: I checked for an existing issue or PR covering the same request.
+          required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security issue or sensitive report
+    url: https://github.com/LatencyTDH/doordash-cli/security/policy
+    about: Please follow SECURITY.md and keep exploit details out of public issues.
+  - name: Contribution guide
+    url: https://github.com/LatencyTDH/doordash-cli/blob/main/CONTRIBUTING.md
+    about: Read the contributor guide before opening a pull request.
