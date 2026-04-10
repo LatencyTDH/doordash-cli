@@ -1192,13 +1192,11 @@ export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
     console.error(`Open this URL in your default browser to continue: ${AUTH_BOOTSTRAP_URL}`);
   }
 
-  console.error("Complete the sign-in in your normal Chromium browser window. I will keep watching for that attached session and import it automatically.");
-  if (reachableCandidates.length === 0) {
-    console.error("No attachable Chromium CDP endpoint was detected yet.");
-    console.error("Start your main browser with remote debugging enabled (for example --remote-debugging-port=9222),");
-    console.error("or set DOORDASH_ATTACHED_BROWSER_CDP_URL / DOORDASH_BROWSER_CDP_URL to an attached browser endpoint.");
-  } else {
+  console.error("Complete the sign-in in your normal browser window. I will keep watching for that attached session and import it automatically.");
+  if (reachableCandidates.length > 0) {
     console.error(`Detected ${reachableCandidates.length} attachable browser endpoint(s). Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
+  } else {
+    console.error(`Waiting up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds for DoorDash login...`);
   }
 
   const importedAfterWait = await waitForAttachedBrowserSessionImport({

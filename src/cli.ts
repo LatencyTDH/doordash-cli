@@ -22,7 +22,7 @@ export function usage(): string {
     "",
     "Notes:",
     "  - Direct GraphQL/HTTP is the default path for auth-check, set-address, search, menu, item, cart, add-to-cart, and update-cart.",
-    "  - auth-check/auth-bootstrap reuse only your existing/main Chromium-family browser session via generic CDP config (for example Chrome, Edge, or Brave).",
+    "  - auth-check/auth-bootstrap reuse only your existing/main browser session via generic CDP config.",
     "  - auth-bootstrap opens DoorDash in your default browser and waits for that attached browser session to become reusable; there is no separate managed-browser fallback.",
     "  - set-address now uses DoorDash autocomplete/get-or-create plus addConsumerAddressV2 for brand-new address enrollment when needed.",
     "  - configurable items require explicit --options-json selections.",
