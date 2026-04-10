@@ -9,7 +9,7 @@ It stops before checkout.
 ## Highlights
 
 - **Cart-safe by design** — browse, inspect existing orders, and manage a cart; no checkout, payment, or order mutation.
-- **Browser-first login** — `dd-cli login` first reuses saved local auth when it is still valid, then tries to import a discoverable signed-in browser session, and only opens/waits on DoorDash in your normal browser when needed.
+- **Browser-first login** — `dd-cli login` reuses saved local auth or a discoverable signed-in browser session when possible, and otherwise opens a temporary login window.
 - **Direct API first** — auth, discovery, existing-order, and cart commands use DoorDash consumer-web GraphQL/HTTP rather than DOM clicking.
 - **JSON-friendly** — every command prints structured output.
 - **Fail-closed** — unsupported commands, flags, or unsafe payload shapes are rejected.
@@ -55,7 +55,7 @@ doordash-cli install-browser
 npm run install:browser
 ```
 
-That runtime is used for the CLI's local direct-session execution and the temporary Chromium login-window fallback when no reusable browser session is discoverable.
+That runtime is used when the CLI needs a local browser, including the temporary login window fallback.
 
 ## First run
 
@@ -70,34 +70,13 @@ If you are running from a checkout without `npm link`, replace `doordash-cli` wi
 
 ## Login and session reuse
 
-### `login`
+`login` reuses saved local auth when it is still valid. Otherwise it tries to import a discoverable signed-in browser session. If neither is available, it opens a temporary Chromium login window and saves the session there. If authentication still is not established, `login` exits non-zero.
 
-`login` follows a browser-first flow:
+`auth-check` reports whether the saved state appears logged in and can quietly import a discoverable signed-in browser session unless `logout` disabled that auto-reuse.
 
-1. check whether the saved local DoorDash session is already still authenticated
-2. if it is, exit immediately without opening a browser
-3. otherwise try to import an already-signed-in discoverable browser session
-4. if that succeeds, save it for later direct API calls and exit immediately
-5. otherwise, if the CLI can watch a reusable attached browser connection, open DoorDash there and wait up to 180 seconds for sign-in to complete
-6. if no reusable browser connection is discoverable yet, open a temporary Chromium login window that the CLI can watch directly and wait up to 180 seconds there instead
-7. only if that watchable fallback browser cannot be launched does the CLI fall back to opening your default browser and exiting quickly with troubleshooting guidance
-8. if authentication still is not established, `login` exits non-zero instead of pretending success
+`logout` clears persisted cookies and stored browser state, then keeps automatic browser-session reuse disabled until you explicitly run `dd-cli login` again.
 
-### `auth-check`
-
-`auth-check` performs a direct `consumer` query and reports whether the saved state appears logged in, plus the default address if DoorDash returns one.
-
-When a reusable signed-in browser session is already discoverable, `auth-check` can quietly import it instead of making you sign in again, unless `logout` explicitly disabled that auto-reuse.
-
-### `logout`
-
-`logout` clears the persisted cookies and stored browser state that power later direct API calls, then blocks automatic browser-session reuse until you explicitly run `dd-cli login` again. That keeps `logout` from being immediately undone by a still-signed-in browser window.
-
-### Browser-session troubleshooting
-
-The happy path is `dd-cli login` either reusing an already-discoverable signed-in browser session or opening a temporary Chromium login window that the CLI can watch directly.
-
-Under the hood, the CLI still prefers a discoverable browser connection when one is available, because that lets it import an existing signed-in session without making you sign in again. If it cannot find one, it now falls back to a watchable Chromium login window instead of immediately giving up. See the install guide for the exact discovery inputs it checks (environment variables, OpenClaw browser config, and default localhost CDP ports) when you want attached-browser reuse to work too.
+If `login` opens a temporary Chromium window, finish signing in there and let the CLI save the session. If you expect reuse from another browser, make sure it exposes a compatible CDP endpoint, then rerun `dd-cli login`.
 
 ## Command surface
 

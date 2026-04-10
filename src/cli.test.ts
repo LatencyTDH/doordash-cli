@@ -126,11 +126,10 @@ test("help output shows the direct read-only/cart-safe command surface", () => {
   assert.match(result.stdout, /options-json/);
   assert.match(result.stdout, /--version, -v/);
   assert.match(result.stdout, /man dd-cli/);
-  assert.match(result.stdout, /login first checks saved local auth, then tries importing an already-signed-in browser session, then opens DoorDash in a watchable browser it can actually follow\./);
-  assert.match(result.stdout, /when a reusable attached browser is discoverable, login opens DoorDash there and watches it directly; otherwise it falls back to a temporary Chromium login window the CLI can watch itself\./);
-  assert.match(result.stdout, /login exits non-zero when authentication still was not established\./);
-  assert.match(result.stdout, /auth-check can quietly reuse\/import an already-signed-in browser session when one is available, unless logout explicitly disabled that auto-reuse\./);
-  assert.match(result.stdout, /logout clears saved session files and disables automatic browser-session reuse until the next login\./);
+  assert.match(result.stdout, /login reuses saved local auth when possible, otherwise imports a signed-in browser session or opens a temporary Chromium login window\./);
+  assert.match(result.stdout, /login exits non-zero if authentication is still not established\./);
+  assert.match(result.stdout, /auth-check reports saved-session status and can quietly reuse\/import a signed-in browser session unless logout disabled that auto-reuse\./);
+  assert.match(result.stdout, /logout clears saved session files and keeps automatic browser-session reuse off until the next login\./);
   assert.match(result.stdout, /Out-of-scope commands remain intentionally unsupported/);
   assert.doesNotMatch(result.stdout, /auth-bootstrap/);
   assert.doesNotMatch(result.stdout, /auth-clear/);
