@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -1880,11 +1880,11 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
 export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
   return bootstrapAuthSessionWithDeps({
     clearBlockedBrowserImport,
-    checkPersistedAuth: getPersistedAuthDirect,
+    checkPersistedAuth: inspectPersistedAuthDirect,
     importBrowserSessionIfAvailable,
     markBrowserImportAttempted: () => session.markBrowserImportAttempted(),
-    getAttachedBrowserCdpCandidates,
-    getReachableCdpCandidates,
+    getAttachedBrowserCdpCandidates: discoverAttachedBrowserCdpCandidates,
+    getReachableCdpCandidates: probeReachableAttachedBrowserCdpCandidates,
     describeDesktopBrowserReuseGap,
     openUrlInAttachedBrowser,
     openUrlInDefaultBrowser,
@@ -2817,10 +2817,65 @@ export function selectAttachedBrowserImportMode(input: {
 
 export type BrowserSessionImportStrategy = "local-linux-chromium-profile" | "attached-browser-cdp";
 
+export type LocalBrowserProfileImportCandidate = {
+  browserLabel: string;
+  userDataDir: string;
+  userDataDirExists: boolean;
+  importableProfileNames: string[];
+  importableProfileCount: number;
+};
+
+export type LocalBrowserProfileImportInspection = {
+  supported: boolean;
+  platform: NodeJS.Platform;
+  candidates: LocalBrowserProfileImportCandidate[];
+};
+
+export type AttachedBrowserCdpInspection = {
+  discoveredCandidates: string[];
+  reachableCandidates: string[];
+  reuseGap: string | null;
+};
+
 export function preferredBrowserSessionImportStrategies(platform: NodeJS.Platform): readonly BrowserSessionImportStrategy[] {
   return platform === "linux"
     ? (["local-linux-chromium-profile", "attached-browser-cdp"] as const)
     : (["attached-browser-cdp"] as const);
+}
+
+export async function inspectLocalBrowserProfileImportCandidates(): Promise<LocalBrowserProfileImportInspection> {
+  if (process.platform !== "linux") {
+    return {
+      supported: false,
+      platform: process.platform,
+      candidates: [],
+    };
+  }
+
+  const candidates = await Promise.all(
+    LINUX_CHROMIUM_COOKIE_IMPORT_BROWSERS.map(async (browser) => {
+      const userDataDirExists = await stat(browser.userDataDir)
+        .then((entry) => entry.isDirectory())
+        .catch(() => false);
+      const importableProfileNames = userDataDirExists
+        ? (await readLinuxChromiumCookieImports(browser)).map((profileImport) => profileImport.profileName)
+        : [];
+
+      return {
+        browserLabel: browser.browserLabel,
+        userDataDir: browser.userDataDir,
+        userDataDirExists,
+        importableProfileNames,
+        importableProfileCount: importableProfileNames.length,
+      } satisfies LocalBrowserProfileImportCandidate;
+    }),
+  );
+
+  return {
+    supported: true,
+    platform: process.platform,
+    candidates,
+  };
 }
 
 async function importBrowserSessionIfAvailable(): Promise<boolean> {
@@ -2832,7 +2887,7 @@ async function importBrowserSessionIfAvailable(): Promise<boolean> {
       continue;
     }
 
-    if (await importBrowserSessionFromCdpCandidates(await getAttachedBrowserCdpCandidates())) {
+    if (await importBrowserSessionFromCdpCandidates(await discoverAttachedBrowserCdpCandidates())) {
       return true;
     }
   }
@@ -2855,7 +2910,7 @@ async function importBrowserSessionFromLocalChromiumProfiles(): Promise<boolean>
       }
 
       await writeStoredSessionArtifacts(profileImport.cookies);
-      const persistedAuth = await getPersistedAuthDirect();
+      const persistedAuth = await inspectPersistedAuthDirect();
       if (persistedAuth?.isLoggedIn) {
         return true;
       }
@@ -2968,7 +3023,7 @@ async function confirmManagedBrowserAuth(context: BrowserContext | null, page: P
     await saveContextState(context).catch(() => {});
   }
 
-  return (await getPersistedAuthDirect().catch(() => null)) ?? liveAuth;
+  return (await inspectPersistedAuthDirect().catch(() => null)) ?? liveAuth;
 }
 
 async function saveContextState(context: BrowserContext, cookies: Cookie[] | null = null): Promise<void> {
@@ -2980,7 +3035,7 @@ async function saveContextState(context: BrowserContext, cookies: Cookie[] | nul
   await writeFile(getCookiesPath(), JSON.stringify(resolvedCookies, null, 2));
 }
 
-async function getPersistedAuthDirect(): Promise<AuthResult | null> {
+export async function inspectPersistedAuthDirect(): Promise<AuthResult | null> {
   if (!(await hasPersistedSessionArtifacts())) {
     return null;
   }
@@ -2998,7 +3053,7 @@ async function getPersistedAuthDirect(): Promise<AuthResult | null> {
 }
 
 async function validatePersistedDirectSessionArtifacts(): Promise<boolean> {
-  const auth = await getPersistedAuthDirect();
+  const auth = await inspectPersistedAuthDirect();
   return auth?.isLoggedIn === true;
 }
 
@@ -3037,12 +3092,12 @@ export function resolveAttachedBrowserCdpCandidates(
   return [...candidates];
 }
 
-async function getAttachedBrowserCdpCandidates(): Promise<string[]> {
+export async function discoverAttachedBrowserCdpCandidates(): Promise<string[]> {
   const configCandidates = await readOpenClawBrowserConfigCandidates({ profileNames: ["user", "chrome", "openclaw"] });
   return resolveAttachedBrowserCdpCandidates(process.env, configCandidates);
 }
 
-async function getReachableCdpCandidates(candidates: string[]): Promise<string[]> {
+export async function probeReachableAttachedBrowserCdpCandidates(candidates: string[]): Promise<string[]> {
   const reachable: string[] = [];
   for (const cdpUrl of candidates) {
     if (await isCdpEndpointReachable(cdpUrl)) {
@@ -3451,6 +3506,16 @@ async function describeDesktopBrowserReuseGap(): Promise<string | null> {
     processCommands,
     hasAnyDevToolsActivePort: await hasAnyKnownDevToolsActivePort(),
   });
+}
+
+export async function inspectAttachedBrowserCdpCandidates(): Promise<AttachedBrowserCdpInspection> {
+  const discoveredCandidates = await discoverAttachedBrowserCdpCandidates();
+  const reachableCandidates = await probeReachableAttachedBrowserCdpCandidates(discoveredCandidates);
+  return {
+    discoveredCandidates,
+    reachableCandidates,
+    reuseGap: await describeDesktopBrowserReuseGap(),
+  };
 }
 
 async function readOpenClawBrowserConfigCandidates(input: { profileNames: string[] }): Promise<string[]> {
