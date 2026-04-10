@@ -74,9 +74,9 @@ If you are running from a checkout without `npm link`, replace `doordash-cli` wi
 
 `auth-check` reports whether the saved state appears logged in and can quietly import a discoverable signed-in browser session unless `logout` disabled that auto-reuse.
 
-`logout` clears persisted cookies and stored browser state, then keeps automatic browser-session reuse disabled until you explicitly run `dd-cli login` again.
+`logout` clears persisted cookies and stored browser state, then keeps passive browser-session reuse disabled until your next explicit `dd-cli login` attempt.
 
-If `login` opens a temporary Chromium window, finish signing in there and let the CLI save the session. If you expect reuse from another browser, make sure it exposes a compatible CDP endpoint, then rerun `dd-cli login`.
+If `login` opens a temporary Chromium window, the CLI now keeps checking automatically and also tells you that you can press Enter to force an immediate recheck once the page already shows you are signed in. That restores the old effective manual-completion path without giving up automatic completion when it works. If you expect reuse from another browser instead, make sure it exposes a compatible CDP endpoint, then rerun `dd-cli login`.
 
 ## Command surface
 

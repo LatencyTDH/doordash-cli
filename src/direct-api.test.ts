@@ -279,6 +279,7 @@ test("bootstrapAuthSessionWithDeps returns immediately when saved local auth is 
     waitForManagedBrowserLogin: async () => {
       throw new Error("should not launch a managed browser when saved auth is already valid");
     },
+    canPromptForManagedBrowserConfirmation: () => false,
     checkAuthDirect: async () => {
       throw new Error("should not re-check auth through the live session when saved auth is already valid");
     },
@@ -341,6 +342,7 @@ test("bootstrapAuthSessionWithDeps returns immediately when an attached browser 
     waitForManagedBrowserLogin: async () => {
       throw new Error("should not launch a managed browser when immediate browser-session import succeeded");
     },
+    canPromptForManagedBrowserConfirmation: () => false,
     checkAuthDirect: async () => auth,
     log: (message) => {
       logs.push(message);
@@ -401,6 +403,7 @@ test("bootstrapAuthSessionWithDeps opens a watchable attached browser session be
     waitForManagedBrowserLogin: async () => {
       throw new Error("should not launch a managed browser when an attached browser is reachable");
     },
+    canPromptForManagedBrowserConfirmation: () => false,
     checkAuthDirect: async () => auth,
     log: (message) => {
       logs.push(message);
@@ -417,7 +420,7 @@ test("bootstrapAuthSessionWithDeps opens a watchable attached browser session be
   assert.match(result.message, /saved it for direct API use/);
 });
 
-test("bootstrapAuthSessionWithDeps falls back to a managed browser login window when no reusable browser connection is discoverable", async () => {
+test("bootstrapAuthSessionWithDeps falls back to a managed browser login window and auto-completes when it can prove login", async () => {
   const auth: AuthResult = {
     success: true,
     isLoggedIn: true,
@@ -449,8 +452,13 @@ test("bootstrapAuthSessionWithDeps falls back to a managed browser login window 
     },
     waitForManagedBrowserLogin: async () => {
       managedCalls += 1;
-      return auth;
+      return {
+        status: "completed",
+        completion: "automatic",
+        auth,
+      };
     },
+    canPromptForManagedBrowserConfirmation: () => true,
     checkAuthDirect: async () => auth,
     log: (message) => {
       logs.push(message);
@@ -460,9 +468,105 @@ test("bootstrapAuthSessionWithDeps falls back to a managed browser login window 
   assert.equal(managedCalls, 1);
   assert.equal(attachedWaitCalls, 0);
   assert.match(logs.join("\n"), /temporary Chromium login window/);
-  assert.match(result.message, /temporary Chromium login window/);
+  assert.match(logs.join("\n"), /press Enter here to force an immediate recheck/i);
+  assert.match(result.message, /detected the signed-in session there automatically/i);
   assert.equal(result.success, true);
   assert.equal(result.isLoggedIn, true);
+});
+
+test("bootstrapAuthSessionWithDeps restores an explicit Enter-style completion path for the managed browser fallback", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: true,
+    email: "user@example.com",
+    firstName: "Test",
+    lastName: "User",
+    consumerId: "consumer-1",
+    marketId: "market-1",
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  const logs: string[] = [];
+  const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {},
+    checkPersistedAuth: async () => null,
+    importBrowserSessionIfAvailable: async () => false,
+    markBrowserImportAttempted: () => {},
+    getAttachedBrowserCdpCandidates: async () => [],
+    getReachableCdpCandidates: async () => [],
+    openUrlInAttachedBrowser: async () => false,
+    openUrlInDefaultBrowser: async () => true,
+    waitForAttachedBrowserSessionImport: async () => false,
+    waitForManagedBrowserLogin: async () => ({
+      status: "completed",
+      completion: "manual",
+      auth,
+    }),
+    canPromptForManagedBrowserConfirmation: () => true,
+    checkAuthDirect: async () => auth,
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.match(logs.join("\n"), /press Enter here to force an immediate recheck/i);
+  assert.match(result.message, /After you pressed Enter to confirm the browser login was complete/i);
+  assert.equal(result.success, true);
+  assert.equal(result.isLoggedIn, true);
+});
+
+test("bootstrapAuthSessionWithDeps returns a bounded failure instead of a dead-end when managed browser auto-detection cannot prove login", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: false,
+    email: null,
+    firstName: null,
+    lastName: null,
+    consumerId: null,
+    marketId: null,
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  let attachedWaitCalls = 0;
+  let attachedWaitTimeoutMs = 0;
+  const logs: string[] = [];
+  const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {},
+    checkPersistedAuth: async () => null,
+    importBrowserSessionIfAvailable: async () => false,
+    markBrowserImportAttempted: () => {},
+    getAttachedBrowserCdpCandidates: async () => ["http://127.0.0.1:9222"],
+    getReachableCdpCandidates: async () => [],
+    openUrlInAttachedBrowser: async () => false,
+    openUrlInDefaultBrowser: async () => true,
+    waitForAttachedBrowserSessionImport: async (input) => {
+      attachedWaitCalls += 1;
+      attachedWaitTimeoutMs = input.timeoutMs;
+      return false;
+    },
+    waitForManagedBrowserLogin: async () => ({
+      status: "timed-out",
+      auth,
+    }),
+    canPromptForManagedBrowserConfirmation: () => true,
+    checkAuthDirect: async () => auth,
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.equal(attachedWaitCalls, 0);
+  assert.equal(attachedWaitTimeoutMs, 0);
+  assert.match(logs.join("\n"), /temporary Chromium login window/i);
+  assert.match(logs.join("\n"), /press Enter here to force an immediate recheck/i);
+  assert.equal(result.success, false);
+  assert.equal(result.isLoggedIn, false);
+  assert.match(result.message, /couldn't prove an authenticated DoorDash session/i);
+  assert.match(result.message, /press Enter sooner next time/i);
 });
 
 test("bootstrapAuthSessionWithDeps falls back to quick troubleshooting guidance when the managed browser login window cannot launch", async () => {
@@ -496,7 +600,8 @@ test("bootstrapAuthSessionWithDeps falls back to quick troubleshooting guidance 
       attachedWaitTimeoutMs = input.timeoutMs;
       return false;
     },
-    waitForManagedBrowserLogin: async () => null,
+    waitForManagedBrowserLogin: async () => ({ status: "launch-failed" }),
+    canPromptForManagedBrowserConfirmation: () => true,
     checkAuthDirect: async () => auth,
     log: (message) => {
       logs.push(message);
@@ -510,6 +615,54 @@ test("bootstrapAuthSessionWithDeps falls back to quick troubleshooting guidance 
   assert.equal(result.success, false);
   assert.equal(result.isLoggedIn, false);
   assert.match(result.message, /still isn't exposing a reusable browser session/);
+});
+
+test("bootstrapAuthSessionWithDeps clears the logout block before an explicit login reuses an attached browser session", async () => {
+  const auth: AuthResult = {
+    success: true,
+    isLoggedIn: true,
+    email: "user@example.com",
+    firstName: "Test",
+    lastName: "User",
+    consumerId: "consumer-1",
+    marketId: "market-1",
+    defaultAddress: null,
+    cookiesPath: "/tmp/cookies.json",
+    storageStatePath: "/tmp/storage-state.json",
+  };
+
+  let blocked = true;
+  let clearCalls = 0;
+  let importCalls = 0;
+  const result = await bootstrapAuthSessionWithDeps({
+    clearBlockedBrowserImport: async () => {
+      clearCalls += 1;
+      blocked = false;
+    },
+    checkPersistedAuth: async () => null,
+    importBrowserSessionIfAvailable: async () => {
+      importCalls += 1;
+      return blocked === false;
+    },
+    markBrowserImportAttempted: () => {},
+    getAttachedBrowserCdpCandidates: async () => [],
+    getReachableCdpCandidates: async () => [],
+    openUrlInAttachedBrowser: async () => false,
+    openUrlInDefaultBrowser: async () => false,
+    waitForAttachedBrowserSessionImport: async () => false,
+    waitForManagedBrowserLogin: async () => {
+      throw new Error("should not launch a managed browser when explicit login can immediately reuse an attached browser session");
+    },
+    canPromptForManagedBrowserConfirmation: () => false,
+    checkAuthDirect: async () => auth,
+    log: () => {},
+  });
+
+  assert.equal(clearCalls, 1);
+  assert.equal(importCalls, 1);
+  assert.equal(result.success, true);
+  assert.equal(result.isLoggedIn, true);
+  assert.match(result.message, /Imported an existing signed-in browser session/);
 });
 
 test("parseOptionSelectionsJson parses structured recursive option selections", () => {

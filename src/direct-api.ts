@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { createInterface } from "node:readline";
 import { chromium, type Browser, type BrowserContext, type Cookie, type Page } from "playwright";
 import { getBrowserImportBlockPath, getCookiesPath, getStorageStatePath } from "./session-storage.js";
 
@@ -10,6 +11,8 @@ const AUTH_BOOTSTRAP_URL = `${BASE_URL}/home`;
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 180_000;
 const AUTH_BOOTSTRAP_POLL_INTERVAL_MS = 2_000;
 const AUTH_BOOTSTRAP_NO_DISCOVERY_GRACE_MS = 10_000;
+const ATTACHED_BROWSER_CDP_REACHABILITY_TIMEOUT_MS = 2_000;
+const ATTACHED_BROWSER_CDP_CONNECT_TIMEOUT_MS = 5_000;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
@@ -741,6 +744,20 @@ export type AuthBootstrapResult =
       message: string;
     });
 
+type ManagedBrowserLoginResult =
+  | {
+      status: "completed";
+      completion: "automatic" | "manual";
+      auth: AuthResult;
+    }
+  | {
+      status: "timed-out";
+      auth: AuthResult;
+    }
+  | {
+      status: "launch-failed";
+    };
+
 export type SearchRestaurantResult = {
   id: string;
   name: string;
@@ -1461,7 +1478,13 @@ type BootstrapAuthSessionDeps = {
   openUrlInAttachedBrowser: (input: { cdpUrl: string; targetUrl: string }) => Promise<boolean>;
   openUrlInDefaultBrowser: (targetUrl: string) => Promise<boolean>;
   waitForAttachedBrowserSessionImport: (input: { timeoutMs: number; pollIntervalMs: number }) => Promise<boolean>;
-  waitForManagedBrowserLogin: (input: { targetUrl: string; timeoutMs: number; pollIntervalMs: number }) => Promise<AuthResult | null>;
+  waitForManagedBrowserLogin: (input: {
+    targetUrl: string;
+    timeoutMs: number;
+    pollIntervalMs: number;
+    log: (message: string) => void;
+  }) => Promise<ManagedBrowserLoginResult>;
+  canPromptForManagedBrowserConfirmation: () => boolean;
   checkAuthDirect: () => Promise<AuthResult>;
   log: (message: string) => void;
 };
@@ -1509,6 +1532,53 @@ function buildAuthBootstrapFailure(auth: AuthResult | null, message: string): Au
     success: false,
     isLoggedIn: false,
     message,
+  };
+}
+
+function canPromptForManagedBrowserConfirmation(): boolean {
+  return Boolean(process.stdin.isTTY);
+}
+
+type ManagedBrowserManualConfirmationHandle = {
+  isEnabled: boolean;
+  consumeRequested: () => boolean;
+  close: () => void;
+};
+
+function createManagedBrowserManualConfirmationHandle(): ManagedBrowserManualConfirmationHandle {
+  if (!canPromptForManagedBrowserConfirmation()) {
+    return {
+      isEnabled: false,
+      consumeRequested: () => false,
+      close: () => {},
+    };
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+    terminal: true,
+  });
+  let requested = false;
+  const onLine = () => {
+    requested = true;
+  };
+  rl.on("line", onLine);
+
+  return {
+    isEnabled: true,
+    consumeRequested: () => {
+      if (!requested) {
+        return false;
+      }
+
+      requested = false;
+      return true;
+    },
+    close: () => {
+      rl.off("line", onLine);
+      rl.close();
+    },
   };
 }
 
@@ -1575,20 +1645,39 @@ export async function bootstrapAuthSessionWithDeps(deps: BootstrapAuthSessionDep
     );
   }
 
+  const manualManagedConfirmationAvailable = deps.canPromptForManagedBrowserConfirmation();
   deps.log(
     "I couldn't find a reusable browser connection, so I'm opening a temporary Chromium login window that the CLI can watch directly.",
+  );
+  deps.log(
+    manualManagedConfirmationAvailable
+      ? `Finish signing in in that window. I'll keep checking automatically for up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds. If the page already shows you're signed in and the CLI still hasn't finished, press Enter here to force an immediate recheck.`
+      : `Finish signing in in that window. I'll keep checking automatically for up to ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds.`,
   );
 
   const managedAuth = await deps.waitForManagedBrowserLogin({
     targetUrl: AUTH_BOOTSTRAP_URL,
     timeoutMs: AUTH_BOOTSTRAP_TIMEOUT_MS,
     pollIntervalMs: AUTH_BOOTSTRAP_POLL_INTERVAL_MS,
+    log: deps.log,
   });
 
-  if (managedAuth) {
-    return managedAuth.isLoggedIn
-      ? buildAuthBootstrapSuccess(managedAuth, "Opened a temporary Chromium login window, detected the signed-in session there, and saved it for direct API use.")
-      : buildAuthBootstrapFailure(managedAuth, `Opened a temporary Chromium login window and watched for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no authenticated DoorDash session was established.`);
+  if (managedAuth.status === "completed") {
+    return buildAuthBootstrapSuccess(
+      managedAuth.auth,
+      managedAuth.completion === "manual"
+        ? "Opened a temporary Chromium login window. After you pressed Enter to confirm the browser login was complete, the CLI rechecked the signed-in session there and saved it for direct API use."
+        : "Opened a temporary Chromium login window, detected the signed-in session there automatically, and saved it for direct API use.",
+    );
+  }
+
+  if (managedAuth.status === "timed-out") {
+    return buildAuthBootstrapFailure(
+      managedAuth.auth,
+      manualManagedConfirmationAvailable
+        ? `Opened a temporary Chromium login window and watched for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but I still couldn't prove an authenticated DoorDash session. If the browser already looks signed in, press Enter sooner next time to force an immediate recheck, or rerun dd-cli login.`
+        : `Opened a temporary Chromium login window and watched for ${Math.round(AUTH_BOOTSTRAP_TIMEOUT_MS / 1000)} seconds, but no authenticated DoorDash session was established.`,
+    );
   }
 
   const openedBrowser = await deps.openUrlInDefaultBrowser(AUTH_BOOTSTRAP_URL);
@@ -1633,6 +1722,7 @@ export async function bootstrapAuthSession(): Promise<AuthBootstrapResult> {
     openUrlInDefaultBrowser,
     waitForAttachedBrowserSessionImport,
     waitForManagedBrowserLogin,
+    canPromptForManagedBrowserConfirmation,
     checkAuthDirect,
     log: (message) => console.error(message),
   });
@@ -2570,7 +2660,7 @@ async function importBrowserSessionFromCdpCandidates(candidates: string[]): Prom
     let browser: Browser | null = null;
     let tempPage: Page | null = null;
     try {
-      browser = await chromium.connectOverCDP(cdpUrl);
+      browser = await chromium.connectOverCDP(cdpUrl, { timeout: ATTACHED_BROWSER_CDP_CONNECT_TIMEOUT_MS });
       const context = browser.contexts()[0];
       if (!context) {
         continue;
@@ -2638,6 +2728,31 @@ async function fetchConsumerViaPage(page: Page): Promise<{ consumer: ConsumerGra
   );
 
   return parseGraphQlResponse<{ consumer: ConsumerGraph | null }>("attachedBrowserConsumerImport", raw.status, raw.text);
+}
+
+async function readLiveManagedBrowserAuth(page: Page | null): Promise<AuthResult> {
+  if (!page || page.isClosed()) {
+    return buildAuthResult(null);
+  }
+
+  const consumerData = await fetchConsumerViaPage(page).catch(() => null);
+  return buildAuthResult(consumerData?.consumer ?? null);
+}
+
+async function confirmManagedBrowserAuth(context: BrowserContext | null, page: Page | null): Promise<AuthResult> {
+  const liveAuth = await readLiveManagedBrowserAuth(page);
+  if (liveAuth.isLoggedIn) {
+    if (context) {
+      await saveContextState(context).catch(() => {});
+    }
+    return liveAuth;
+  }
+
+  if (context) {
+    await saveContextState(context).catch(() => {});
+  }
+
+  return (await getPersistedAuthDirect().catch(() => null)) ?? liveAuth;
 }
 
 async function saveContextState(context: BrowserContext, cookies: Cookie[] | null = null): Promise<void> {
@@ -2811,7 +2926,7 @@ async function openUrlInAttachedBrowser(input: { cdpUrl: string; targetUrl: stri
   let browser: Browser | null = null;
 
   try {
-    browser = await chromium.connectOverCDP(input.cdpUrl);
+    browser = await chromium.connectOverCDP(input.cdpUrl, { timeout: ATTACHED_BROWSER_CDP_CONNECT_TIMEOUT_MS });
     const context = browser.contexts()[0];
     if (!context) {
       return false;
@@ -2836,10 +2951,12 @@ async function waitForManagedBrowserLogin(input: {
   targetUrl: string;
   timeoutMs: number;
   pollIntervalMs: number;
-}): Promise<AuthResult | null> {
+  log: (message: string) => void;
+}): Promise<ManagedBrowserLoginResult> {
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   let page: Page | null = null;
+  const manualConfirmation = createManagedBrowserManualConfirmationHandle();
 
   try {
     browser = await chromium.launch({
@@ -2869,10 +2986,29 @@ async function waitForManagedBrowserLogin(input: {
 
     const deadline = Date.now() + input.timeoutMs;
     while (Date.now() <= deadline) {
-      await saveContextState(context).catch(() => {});
-      const auth = await getPersistedAuthDirect();
-      if (auth?.isLoggedIn) {
-        return auth;
+      const liveAuth = await readLiveManagedBrowserAuth(page);
+      if (liveAuth.isLoggedIn) {
+        await saveContextState(context).catch(() => {});
+        return {
+          status: "completed",
+          completion: "automatic",
+          auth: liveAuth,
+        };
+      }
+
+      if (manualConfirmation.consumeRequested()) {
+        const confirmedAuth = await confirmManagedBrowserAuth(context, page);
+        if (confirmedAuth.isLoggedIn) {
+          return {
+            status: "completed",
+            completion: "manual",
+            auth: confirmedAuth,
+          };
+        }
+
+        input.log(
+          "Still not seeing an authenticated DoorDash session yet. Finish signing in in the opened browser window, then press Enter again or keep waiting for automatic detection.",
+        );
       }
 
       if (page.isClosed()) {
@@ -2886,15 +3022,27 @@ async function waitForManagedBrowserLogin(input: {
       await wait(input.pollIntervalMs);
     }
 
-    await saveContextState(context).catch(() => {});
-    return (await getPersistedAuthDirect()) ?? buildAuthResult(null);
-  } catch (error) {
-    if (isPlaywrightBrowserInstallMissingError(error)) {
-      return null;
+    const finalAuth = await confirmManagedBrowserAuth(context, page);
+    if (finalAuth.isLoggedIn) {
+      return {
+        status: "completed",
+        completion: "automatic",
+        auth: finalAuth,
+      };
     }
 
-    return null;
+    return {
+      status: "timed-out",
+      auth: finalAuth,
+    };
+  } catch (error) {
+    if (isPlaywrightBrowserInstallMissingError(error)) {
+      return { status: "launch-failed" };
+    }
+
+    return { status: "launch-failed" };
   } finally {
+    manualConfirmation.close();
     await page?.close().catch(() => {});
     await context?.close().catch(() => {});
     await browser?.close().catch(() => {});
@@ -2991,7 +3139,9 @@ async function readOpenClawBrowserConfigCandidates(input: { profileNames: string
 
 async function isCdpEndpointReachable(cdpUrl: string): Promise<boolean> {
   try {
-    const response = await fetch(`${cdpUrl.replace(/\/$/, "")}/json/version`);
+    const response = await fetch(`${cdpUrl.replace(/\/$/, "")}/json/version`, {
+      signal: AbortSignal.timeout(ATTACHED_BROWSER_CDP_REACHABILITY_TIMEOUT_MS),
+    });
     return response.ok;
   } catch {
     return false;
