@@ -11,6 +11,7 @@ import {
   parseExistingOrdersResponse,
   parseOptionSelectionsJson,
   parseSearchRestaurantRow,
+  preferredBrowserSessionImportStrategies,
   resolveAttachedBrowserCdpCandidates,
   resolveAvailableAddressMatch,
   resolveSystemBrowserOpenCommand,
@@ -207,7 +208,7 @@ test("resolveSystemBrowserOpenCommand stays generic across operating systems", (
   });
 });
 
-test("summarizeDesktopBrowserReuseGap explains why a merely-open Brave window is not reusable", () => {
+test("summarizeDesktopBrowserReuseGap explains why a running Brave session still was not reusable", () => {
   const message = summarizeDesktopBrowserReuseGap({
     processCommands: [
       "/bin/bash /usr/bin/brave-browser-stable",
@@ -218,8 +219,9 @@ test("summarizeDesktopBrowserReuseGap explains why a merely-open Brave window is
   });
 
   assert.match(message ?? "", /Brave is already running on this desktop/i);
-  assert.match(message ?? "", /normal open browser window is not automatically reusable/i);
-  assert.match(message ?? "", /attach to/i);
+  assert.match(message ?? "", /couldn't reuse it automatically/i);
+  assert.match(message ?? "", /attachable browser automation session/i);
+  assert.match(message ?? "", /no importable signed-in DoorDash browser profile state was found/i);
 });
 
 test("summarizeDesktopBrowserReuseGap stays quiet once the browser exposes attach signals", () => {
@@ -237,6 +239,12 @@ test("summarizeDesktopBrowserReuseGap stays quiet once the browser exposes attac
     }),
     null,
   );
+});
+
+test("preferredBrowserSessionImportStrategies prefers same-machine linux profile imports before CDP attach", () => {
+  assert.deepEqual(preferredBrowserSessionImportStrategies("linux"), ["local-linux-chromium-profile", "attached-browser-cdp"]);
+  assert.deepEqual(preferredBrowserSessionImportStrategies("darwin"), ["attached-browser-cdp"]);
+  assert.deepEqual(preferredBrowserSessionImportStrategies("win32"), ["attached-browser-cdp"]);
 });
 
 test("selectAttachedBrowserImportMode treats an authenticated browser with DoorDash cookies as an immediate import candidate", () => {
