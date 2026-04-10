@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { EXIT_CODES } from "./automation-contract.js";
 import { commandExitCode, loginFailureAsCliError, parseArgv, version } from "./cli.js";
 import { SAFE_COMMANDS, assertAllowedFlags, assertSafeCommand } from "./lib.js";
+import { resolveCanonicalSessionConfigDir } from "./session-storage.js";
 
 const distDir = dirname(fileURLToPath(import.meta.url));
 const binPath = join(distDir, "bin.js");
@@ -286,7 +287,11 @@ test("logout clears persisted session artifacts in the active home directory", a
     DOORDASH_CLI_SESSION_DIR: "",
     DOORDASH_CLI_CONFIG_DIR: "",
   } as NodeJS.ProcessEnv;
-  const sessionDir = join(tempHome, ".local", "state", "doordash-cli");
+  const sessionDir = resolveCanonicalSessionConfigDir({
+    platform: process.platform,
+    homeDir: tempHome,
+    env,
+  });
   const cookiesPath = join(sessionDir, "cookies.json");
   const storageStatePath = join(sessionDir, "storage-state.json");
   const browserImportBlockPath = join(sessionDir, "browser-import-blocked");
