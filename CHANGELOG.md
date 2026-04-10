@@ -9,6 +9,12 @@ All notable changes to `doordash-cli` will be documented in this file.
 
 See [docs/releasing.md](docs/releasing.md) for the maintainer release flow.
 
+## [0.4.1](https://github.com/LatencyTDH/doordash-cli/compare/v0.4.0...v0.4.1) (2026-04-10)
+
+### Bug Fixes
+
+* bound auth-check and restore login completion flow ([#39](https://github.com/LatencyTDH/doordash-cli/issues/39)) ([5166944](https://github.com/LatencyTDH/doordash-cli/commit/51669444dc124e39ece719624c997ab9f46acd93))
+
 ## [0.4.0](https://github.com/LatencyTDH/doordash-cli/compare/v0.3.3...v0.4.0) (2026-04-10)
 
 ### Features
