@@ -53,6 +53,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate current changelog history
+        run: npm run check:changelog
+
       - name: Compute release version
         id: next
         shell: bash

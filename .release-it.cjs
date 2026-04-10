@@ -114,6 +114,7 @@ module.exports = {
     'after:bump': [
       'npm run validate',
       'npm run smoke:pack',
+      'node scripts/release/check-changelog.mjs',
       'node scripts/release/build-assets.mjs',
     ],
   },
