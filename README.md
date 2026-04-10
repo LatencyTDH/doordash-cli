@@ -128,6 +128,9 @@ Safety is enforced in code:
 - [Install guide](docs/install.md)
 - [Examples](docs/examples.md)
 - [Release process](docs/releasing.md)
+- [Architecture and scope guide](docs/architecture.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 - `man dd-cli`
 - `man doordash-cli`
 
