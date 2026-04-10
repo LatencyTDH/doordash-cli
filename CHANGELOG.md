@@ -9,6 +9,14 @@ All notable changes to `doordash-cli` will be documented in this file.
 
 See [docs/releasing.md](docs/releasing.md) for the maintainer release flow.
 
+## [0.5.0](https://github.com/LatencyTDH/doordash-cli/compare/v0.4.2...v0.5.0) (2026-04-10)
+
+### Features
+
+* add doctor diagnostics command (rebuilt from origin/main) ([#53](https://github.com/LatencyTDH/doordash-cli/issues/53)) ([964af19](https://github.com/LatencyTDH/doordash-cli/commit/964af19b41fad3dded75c9bc454d03bedaeb52ab))
+* add stable automation contract and fixture suite ([#51](https://github.com/LatencyTDH/doordash-cli/issues/51)) ([d9489e6](https://github.com/LatencyTDH/doordash-cli/commit/d9489e6bae06eb599f274655ffc44e361b771c48))
+* support same-machine auth reuse and owned session storage ([#52](https://github.com/LatencyTDH/doordash-cli/issues/52)) ([49ab222](https://github.com/LatencyTDH/doordash-cli/commit/49ab222735fc3b56a5425659960085517e14f778))
+
 ## [0.4.2](https://github.com/LatencyTDH/doordash-cli/compare/v0.4.1...v0.4.2) (2026-04-10)
 
 ### Bug Fixes
