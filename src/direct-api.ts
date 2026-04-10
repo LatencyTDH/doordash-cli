@@ -16,6 +16,167 @@ const ATTACHED_BROWSER_CDP_CONNECT_TIMEOUT_MS = 5_000;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
+const LINUX_CHROMIUM_COOKIE_IMPORT_SCRIPT = String.raw`
+import json
+import os
+import sqlite3
+import hashlib
+import sys
+
+try:
+    import secretstorage
+    from Crypto.Cipher import AES
+except Exception as exc:
+    raise SystemExit(f"missing python support for Chromium cookie import: {exc}")
+
+browser_label = os.environ.get("DD_BROWSER_LABEL", "Chromium")
+user_data_dir = os.environ.get("DD_BROWSER_USER_DATA_DIR", "")
+safe_storage_application = os.environ.get("DD_BROWSER_SAFE_STORAGE_APP", "")
+
+if not user_data_dir or not safe_storage_application:
+    raise SystemExit("missing browser metadata")
+
+
+def chromium_utc_to_unix_seconds(value):
+    if not value:
+        return -1
+    return max(-1, (int(value) / 1000000) - 11644473600)
+
+
+def samesite_to_playwright(value):
+    mapping = {
+        -1: "Lax",
+        0: "None",
+        1: "Lax",
+        2: "Strict",
+    }
+    try:
+        return mapping.get(int(value), "Lax")
+    except Exception:
+        return "Lax"
+
+
+def get_safe_storage_secret(application):
+    bus = secretstorage.dbus_init()
+    for collection in secretstorage.get_all_collections(bus):
+        for item in collection.get_all_items():
+            attrs = item.get_attributes()
+            if attrs.get("xdg:schema") == "chrome_libsecret_os_crypt_password_v2" and attrs.get("application") == application:
+                secret = item.get_secret()
+                return secret.decode("utf-8") if isinstance(secret, bytes) else str(secret)
+    return None
+
+
+def decrypt_cookie_value(encrypted_value, host_key, secret):
+    payload = encrypted_value[3:] if encrypted_value.startswith((b"v10", b"v11")) else encrypted_value
+    key = hashlib.pbkdf2_hmac("sha1", secret.encode("utf-8"), b"saltysalt", 1, dklen=16)
+    decrypted = AES.new(key, AES.MODE_CBC, b" " * 16).decrypt(payload)
+    pad = decrypted[-1]
+    if isinstance(pad, str):
+        pad = ord(pad)
+    if 1 <= pad <= 16:
+        decrypted = decrypted[:-pad]
+    host_hash = hashlib.sha256(host_key.encode("utf-8")).digest()
+    if decrypted.startswith(host_hash):
+        decrypted = decrypted[len(host_hash):]
+    return decrypted.decode("utf-8")
+
+
+def profile_names_for_user_data_dir(root):
+    local_state_path = os.path.join(root, "Local State")
+    entries = []
+    try:
+        with open(local_state_path, "r", encoding="utf-8") as handle:
+            info_cache = ((json.load(handle).get("profile") or {}).get("info_cache") or {})
+        for profile_name, info in info_cache.items():
+            if not isinstance(profile_name, str) or not profile_name.strip():
+                continue
+            active_time = 0.0
+            if isinstance(info, dict):
+                try:
+                    active_time = float(info.get("active_time") or 0)
+                except Exception:
+                    active_time = 0.0
+            entries.append((0 if profile_name == "Default" else 1, -active_time, profile_name))
+    except Exception:
+        pass
+
+    entries.sort()
+    names = [profile_name for _, _, profile_name in entries]
+    if "Default" not in names:
+        names.append("Default")
+    return names
+
+
+safe_storage_secret = get_safe_storage_secret(safe_storage_application)
+if not safe_storage_secret:
+    print("[]")
+    raise SystemExit(0)
+
+imports = []
+for profile_name in profile_names_for_user_data_dir(user_data_dir):
+    cookies_db_path = os.path.join(user_data_dir, profile_name, "Cookies")
+    if not os.path.exists(cookies_db_path):
+        continue
+
+    connection = None
+    try:
+        connection = sqlite3.connect(f"file:{cookies_db_path}?mode=ro", uri=True)
+        cursor = connection.cursor()
+        rows = cursor.execute(
+            """
+            select host_key, name, encrypted_value, path, expires_utc, is_secure, is_httponly, samesite
+            from cookies
+            where host_key like '%doordash%'
+            order by host_key, name
+            """
+        ).fetchall()
+    except Exception:
+        if connection is not None:
+            connection.close()
+        continue
+
+    cookies = []
+    for host_key, name, encrypted_value, path, expires_utc, is_secure, is_httponly, samesite in rows:
+        try:
+            decrypted_value = decrypt_cookie_value(encrypted_value, host_key, safe_storage_secret)
+        except Exception:
+            continue
+        cookies.append({
+            "name": name,
+            "value": decrypted_value,
+            "domain": host_key,
+            "path": path or "/",
+            "expires": chromium_utc_to_unix_seconds(expires_utc),
+            "httpOnly": bool(is_httponly),
+            "secure": bool(is_secure),
+            "sameSite": samesite_to_playwright(samesite),
+        })
+
+    connection.close()
+    if cookies:
+        imports.append({
+            "browserLabel": browser_label,
+            "profileName": profile_name,
+            "cookies": cookies,
+        })
+
+print(json.dumps(imports))
+`;
+
+const LINUX_CHROMIUM_COOKIE_IMPORT_BROWSERS = [
+  {
+    browserLabel: "Brave",
+    safeStorageApplication: "brave",
+    userDataDir: join(homedir(), ".config", "BraveSoftware", "Brave-Browser"),
+  },
+  {
+    browserLabel: "Google Chrome",
+    safeStorageApplication: "chrome",
+    userDataDir: join(homedir(), ".config", "google-chrome"),
+  },
+] as const;
+
 const GRAPHQL_HEADERS = {
   accept: "*/*",
   "content-type": "application/json",
@@ -2655,7 +2816,38 @@ export function selectAttachedBrowserImportMode(input: {
 }
 
 async function importBrowserSessionIfAvailable(): Promise<boolean> {
-  return await importBrowserSessionFromCdpCandidates(await getAttachedBrowserCdpCandidates());
+  if (await importBrowserSessionFromCdpCandidates(await getAttachedBrowserCdpCandidates())) {
+    return true;
+  }
+
+  return await importBrowserSessionFromLocalChromiumProfiles();
+}
+
+async function importBrowserSessionFromLocalChromiumProfiles(): Promise<boolean> {
+  if (process.platform !== "linux") {
+    return false;
+  }
+
+  const originalArtifacts = await snapshotStoredSessionArtifacts();
+
+  for (const browser of LINUX_CHROMIUM_COOKIE_IMPORT_BROWSERS) {
+    const profileImports = await readLinuxChromiumCookieImports(browser);
+    for (const profileImport of profileImports) {
+      if (!hasDoorDashCookies(profileImport.cookies)) {
+        continue;
+      }
+
+      await writeStoredSessionArtifacts(profileImport.cookies);
+      const persistedAuth = await getPersistedAuthDirect();
+      if (persistedAuth?.isLoggedIn) {
+        return true;
+      }
+
+      await restoreStoredSessionArtifacts(originalArtifacts);
+    }
+  }
+
+  return false;
 }
 
 async function importBrowserSessionFromCdpCandidates(candidates: string[]): Promise<boolean> {
@@ -2776,45 +2968,15 @@ async function getPersistedAuthDirect(): Promise<AuthResult | null> {
     return null;
   }
 
-  let browser: Browser | null = null;
-  let context: BrowserContext | null = null;
-  let page: Page | null = null;
+  await session.close().catch(() => {});
+  session.markBrowserImportAttempted();
 
   try {
-    browser = await chromium.launch({
-      headless: true,
-      args: ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"],
-    });
-
-    const storageStatePath = getStorageStatePath();
-    const hasStorage = await hasStorageState();
-    context = await browser.newContext({
-      userAgent: DEFAULT_USER_AGENT,
-      locale: "en-US",
-      viewport: { width: 1280, height: 900 },
-      ...(hasStorage ? { storageState: storageStatePath } : {}),
-    });
-
-    if (!hasStorage) {
-      const cookies = await readStoredCookies();
-      if (cookies.length === 0) {
-        return null;
-      }
-      await context.addCookies(cookies);
-    }
-
-    page = await context.newPage();
-    await page.goto(`${BASE_URL}/home`, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
-    await page.waitForTimeout(1_000);
-
-    const consumerData = await fetchConsumerViaPage(page).catch(() => null);
-    return buildAuthResult(consumerData?.consumer ?? null);
+    return await checkAuthDirect();
   } catch {
     return null;
   } finally {
-    await page?.close().catch(() => {});
-    await context?.close().catch(() => {});
-    await browser?.close().catch(() => {});
+    await session.close().catch(() => {});
   }
 }
 
@@ -3208,22 +3370,35 @@ export function summarizeDesktopBrowserReuseGap(input: {
   return `I can see ${browser.label} is already running on this desktop, but it is not exposing an attachable browser automation session right now. A normal open browser window is not automatically reusable; dd-cli can only import a browser session it can actually attach to.`;
 }
 
-async function captureCommandStdout(command: string, args: string[]): Promise<string> {
+async function captureCommandStdout(
+  command: string,
+  args: string[],
+  options: { env?: NodeJS.ProcessEnv; stdin?: string } = {},
+): Promise<string> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(command, args, {
+      env: options.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
 
     child.once("error", reject);
     child.stdout?.on("data", (chunk: Buffer | string) => {
       stdout.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      stderr.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    child.stdin?.end(options.stdin ?? "");
     child.once("close", (code) => {
       if (code === 0) {
         resolve(Buffer.concat(stdout).toString("utf8"));
         return;
       }
 
-      reject(new Error(`${command} exited with code ${code ?? "null"}`));
+      const stderrText = Buffer.concat(stderr).toString("utf8").trim();
+      reject(new Error(`${command} exited with code ${code ?? "null"}${stderrText ? `: ${stderrText}` : ""}`));
     });
   });
 }
@@ -4053,8 +4228,118 @@ function truncate(value: string, length: number): string {
   return value.length <= length ? value : `${value.slice(0, length)}...`;
 }
 
+type StoredSessionArtifactsSnapshot = {
+  cookiesRaw: string | null;
+  storageStateRaw: string | null;
+};
+
+type LinuxChromiumCookieImport = {
+  browserLabel: string;
+  profileName: string;
+  cookies: Cookie[];
+};
+
 async function ensureConfigDir(): Promise<void> {
   await mkdir(dirname(getCookiesPath()), { recursive: true });
+}
+
+async function snapshotStoredSessionArtifacts(): Promise<StoredSessionArtifactsSnapshot> {
+  const [cookiesRaw, storageStateRaw] = await Promise.all([
+    readFile(getCookiesPath(), "utf8").catch(() => null),
+    readFile(getStorageStatePath(), "utf8").catch(() => null),
+  ]);
+
+  return { cookiesRaw, storageStateRaw };
+}
+
+async function restoreStoredSessionArtifacts(snapshot: StoredSessionArtifactsSnapshot): Promise<void> {
+  await ensureConfigDir();
+
+  if (snapshot.cookiesRaw === null) {
+    await rm(getCookiesPath(), { force: true }).catch(() => {});
+  } else {
+    await writeFile(getCookiesPath(), snapshot.cookiesRaw);
+  }
+
+  if (snapshot.storageStateRaw === null) {
+    await rm(getStorageStatePath(), { force: true }).catch(() => {});
+  } else {
+    await writeFile(getStorageStatePath(), snapshot.storageStateRaw);
+  }
+}
+
+async function writeStoredSessionArtifacts(cookies: Cookie[]): Promise<void> {
+  await ensureConfigDir();
+  await writeFile(getCookiesPath(), JSON.stringify(cookies, null, 2));
+  await writeFile(
+    getStorageStatePath(),
+    JSON.stringify({ cookies, origins: [] satisfies [] }, null, 2),
+  );
+}
+
+async function readLinuxChromiumCookieImports(input: {
+  browserLabel: string;
+  safeStorageApplication: string;
+  userDataDir: string;
+}): Promise<LinuxChromiumCookieImport[]> {
+  try {
+    const stdout = await captureCommandStdout("python3", ["-c", LINUX_CHROMIUM_COOKIE_IMPORT_SCRIPT], {
+      env: {
+        ...process.env,
+        DD_BROWSER_LABEL: input.browserLabel,
+        DD_BROWSER_SAFE_STORAGE_APP: input.safeStorageApplication,
+        DD_BROWSER_USER_DATA_DIR: input.userDataDir,
+      },
+    });
+    const parsed = JSON.parse(stdout);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.flatMap((entry) => {
+      const object = asObject(entry);
+      const browserLabel = typeof object.browserLabel === "string" ? object.browserLabel.trim() : "";
+      const profileName = typeof object.profileName === "string" ? object.profileName.trim() : "";
+      if (!browserLabel || !profileName || !Array.isArray(object.cookies)) {
+        return [];
+      }
+
+      const cookies = object.cookies.flatMap((cookie): Cookie[] => {
+        const parsedCookie = asObject(cookie);
+        const name = typeof parsedCookie.name === "string" ? parsedCookie.name : "";
+        const value = typeof parsedCookie.value === "string" ? parsedCookie.value : "";
+        const domain = typeof parsedCookie.domain === "string" ? parsedCookie.domain : "";
+        const path = typeof parsedCookie.path === "string" && parsedCookie.path ? parsedCookie.path : "/";
+        const sameSiteRaw = typeof parsedCookie.sameSite === "string" ? parsedCookie.sameSite : "Lax";
+        const sameSite: Cookie["sameSite"] =
+          sameSiteRaw === "Strict" || sameSiteRaw === "None" || sameSiteRaw === "Lax" ? sameSiteRaw : "Lax";
+        const expires = typeof parsedCookie.expires === "number" && Number.isFinite(parsedCookie.expires) ? parsedCookie.expires : -1;
+        if (!name || !domain) {
+          return [];
+        }
+        return [
+          {
+            name,
+            value,
+            domain,
+            path,
+            expires,
+            httpOnly: Boolean(parsedCookie.httpOnly),
+            secure: Boolean(parsedCookie.secure),
+            sameSite,
+          },
+        ];
+      });
+
+      if (cookies.length === 0) {
+        return [];
+      }
+
+      return [{ browserLabel, profileName, cookies }];
+    });
+  } catch {
+    return [];
+  }
 }
 
 async function hasBlockedBrowserImport(): Promise<boolean> {
